@@ -15,6 +15,22 @@ from uuid import uuid4
 
 # Import our automation system
 from app.automation.enhanced_booking import start_enhanced_booking as start_automated_booking
+from app.utils.webhooks import initialize_webhook_manager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("🚀 Starting VPS Automation Server...")
+    
+    # Initialize webhook manager
+    if redis_client:
+        await initialize_webhook_manager(redis_client)
+        print("✅ Webhook manager initialized")
+    
+    yield
+    
+    # Shutdown
+    print("🛑 Shutting down VPS Automation Server...")
 
 # Simple app with full production features
 app = FastAPI(
@@ -22,7 +38,8 @@ app = FastAPI(
     description="Complete Swedish driving test booking automation with real-time QR streaming",
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -112,6 +129,7 @@ async def root():
             "qr_streaming", 
             "concurrent_jobs", 
             "websockets",
+            "webhooks",
             "monitoring",
             "authentication"
         ],
@@ -187,7 +205,7 @@ async def detailed_health():
 @app.post("/api/v1/booking/start")
 async def start_booking(request: Dict[str, Any], token: str = Depends(verify_token)):
     """
-    Start a new booking automation job with real browser automation
+    Start a new booking automation job with real browser automation and webhook support
     
     Expected request format:
     {
@@ -195,7 +213,8 @@ async def start_booking(request: Dict[str, Any], token: str = Depends(verify_tok
         "license_type": "B|A|C|D", 
         "exam_type": "Körprov|Kunskapsprov",
         "locations": ["Stockholm", "Göteborg"],
-        "personal_number": "YYYYMMDD-XXXX" (optional for demo)
+        "personal_number": "YYYYMMDD-XXXX" (optional for demo),
+        "webhook_url": "https://your-app.supabase.co/functions/v1/webhook" (optional)
     }
     """
     
@@ -212,13 +231,17 @@ async def start_booking(request: Dict[str, Any], token: str = Depends(verify_tok
     # Generate job ID
     job_id = f"job_{uuid4().hex[:16]}"
     
+    # Extract webhook URL if provided
+    webhook_url = request.get("webhook_url")
+    
     # Start automation in background
     task = asyncio.create_task(
         start_automated_booking(
             job_id=job_id,
             user_config=request,
             redis_client=redis_client,
-            qr_callback=qr_streaming_callback
+            qr_callback=qr_streaming_callback,
+            webhook_url=webhook_url  # Pass webhook URL to automation
         )
     )
     
@@ -240,6 +263,7 @@ async def start_booking(request: Dict[str, Any], token: str = Depends(verify_tok
         "timestamp": datetime.utcnow().isoformat(),
         "websocket_url": f"/ws/{job_id}",
         "qr_polling_url": f"/api/v1/booking/{job_id}/qr",
+        "webhook_configured": webhook_url is not None,
         "estimated_duration": "60-120 seconds"
     }
 
@@ -288,9 +312,13 @@ async def get_latest_qr(job_id: str, token: str = Depends(verify_token)):
         "timestamp": datetime.utcnow().isoformat()
     }
 
-@app.post("/api/v1/booking/cancel/{job_id}")
-async def cancel_booking(job_id: str, token: str = Depends(verify_token)):
-    """Cancel an active booking job"""
+@app.post("/api/v1/booking/stop")  
+async def stop_booking(request: Dict[str, Any], token: str = Depends(verify_token)):
+    """Stop an active booking job (matches expected API format)"""
+    
+    job_id = request.get("job_id")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="Missing job_id")
     
     if job_id in active_jobs:
         # Cancel the task
@@ -322,6 +350,73 @@ async def cancel_booking(job_id: str, token: str = Depends(verify_token)):
             "message": "Job not found or already completed",
             "job_id": job_id
         }
+
+@app.post("/api/v1/booking/cancel/{job_id}")
+async def cancel_booking(job_id: str, token: str = Depends(verify_token)):
+    """Cancel an active booking job (legacy endpoint)"""
+    
+    if job_id in active_jobs:
+        # Cancel the task
+        active_jobs[job_id].cancel()
+        del active_jobs[job_id]
+        
+        # Update status in Redis
+        if redis_client:
+            cancel_data = {
+                "job_id": job_id,
+                "status": "cancelled",
+                "message": "Job cancelled by user",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            redis_client.setex(f"job:{job_id}", 300, json.dumps(cancel_data))
+        
+        # Disconnect WebSocket
+        manager.disconnect(job_id)
+        
+        return {
+            "success": True,
+            "message": "Job cancelled successfully",
+            "job_id": job_id,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    else:
+        return {
+            "success": False,
+            "message": "Job not found or already completed",
+            "job_id": job_id
+        }
+
+@app.get("/api/v1/booking/status")
+async def list_all_jobs(token: str = Depends(verify_token)):
+    """List all active jobs (for admin/monitoring purposes)"""
+    
+    jobs = []
+    for job_id in active_jobs.keys():
+        if redis_client:
+            try:
+                job_data = redis_client.get(f"job:{job_id}")
+                if job_data:
+                    job_info = json.loads(job_data)
+                    jobs.append({
+                        "job_id": job_id,
+                        "status": job_info.get("status", "unknown"),
+                        "user_id": job_info.get("user_id", "unknown"),
+                        "created_at": job_info.get("created_at"),
+                        "is_active": True
+                    })
+            except Exception as e:
+                jobs.append({
+                    "job_id": job_id,
+                    "status": "error",
+                    "error": str(e),
+                    "is_active": True
+                })
+    
+    return {
+        "active_jobs": jobs,
+        "total_count": len(jobs),
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 @app.get("/api/v1/queue/status")
 async def get_queue_status(token: str = Depends(verify_token)):

@@ -1,7 +1,7 @@
 """
 Data Models and Schemas - Pydantic models for API requests/responses and internal data structures
 """
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any, Union
 from enum import Enum
 from pydantic import BaseModel, Field, validator
@@ -64,9 +64,9 @@ class BookingRequest(BaseModel):
     locations: List[str] = Field(..., description="Preferred booking locations")
     
     # Date preferences
-    date_ranges: List[Dict[str, str]] = Field(
-        ..., 
-        description="Date ranges in format [{'start': 'YYYY-MM-DD', 'end': 'YYYY-MM-DD'}]"
+    date_ranges: Optional[List[Dict[str, str]]] = Field(
+        default=None, 
+        description="Date ranges in format [{'start': 'YYYY-MM-DD', 'end': 'YYYY-MM-DD'}]. If not provided, system will search for next 6 months"
     )
     
     # Priority and preferences
@@ -79,8 +79,8 @@ class BookingRequest(BaseModel):
     browser_type: Optional[BrowserType] = Field(default=None, description="Preferred browser type")
     headless: Optional[bool] = Field(default=None, description="Run browser in headless mode")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "user_id": "12345678-1234-1234-1234-123456789abc",
                 "license_type": "B",
@@ -95,6 +95,7 @@ class BookingRequest(BaseModel):
                 "auto_book": True
             }
         }
+    }
 
     @validator('license_type')
     def validate_license_type(cls, v):
@@ -110,6 +111,12 @@ class BookingRequest(BaseModel):
 
     @validator('date_ranges')
     def validate_date_ranges(cls, v):
+        if v is None:
+            # Provide default date range for next 6 months
+            start_date = date.today() + timedelta(days=1)
+            end_date = start_date + timedelta(days=180)
+            return [{"start": start_date.strftime('%Y-%m-%d'), "end": end_date.strftime('%Y-%m-%d')}]
+        
         for date_range in v:
             if 'start' not in date_range or 'end' not in date_range:
                 raise ValueError("Each date range must have 'start' and 'end' keys")
@@ -141,8 +148,8 @@ class BookingResponse(BaseModel):
     estimated_start_time: Optional[datetime] = Field(default=None, description="Estimated job start time")
     queue_position: Optional[int] = Field(default=None, description="Position in queue")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "job_id": "job_87654321-4321-4321-4321-210987654321",
                 "status": "pending",
@@ -151,6 +158,7 @@ class BookingResponse(BaseModel):
                 "queue_position": 3
             }
         }
+    }
 
 
 class JobStatusResponse(BaseModel):
@@ -176,8 +184,8 @@ class JobStatusResponse(BaseModel):
     browser_session_id: Optional[str] = Field(default=None, description="Browser session identifier")
     qr_code_url: Optional[str] = Field(default=None, description="Current QR code image URL")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "job_id": "job_87654321-4321-4321-4321-210987654321",
                 "user_id": "12345678-1234-1234-1234-123456789abc",
@@ -190,6 +198,7 @@ class JobStatusResponse(BaseModel):
                 "qr_code_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
             }
         }
+    }
 
 
 class QRCodeUpdate(BaseModel):
@@ -202,8 +211,8 @@ class QRCodeUpdate(BaseModel):
     expires_at: Optional[datetime] = Field(default=None, description="QR code expiry time")
     retry_count: int = Field(default=0, description="Number of QR refresh attempts")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "job_id": "job_87654321-4321-4321-4321-210987654321",
                 "user_id": "12345678-1234-1234-1234-123456789abc",
@@ -212,29 +221,31 @@ class QRCodeUpdate(BaseModel):
                 "retry_count": 1
             }
         }
+    }
 
 
 class AvailableSlot(BaseModel):
     """Model for available booking time slots"""
     
-    date: date = Field(..., description="Booking date")
-    time: str = Field(..., description="Booking time")
+    slot_date: date = Field(..., description="Booking date")
+    slot_time: str = Field(..., description="Booking time")
     location: str = Field(..., description="Test location")
     exam_type: str = Field(..., description="Exam type")
     vehicle_type: Optional[str] = Field(default=None, description="Vehicle type if applicable")
     availability_id: str = Field(..., description="Internal availability identifier")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
-                "date": "2024-01-20",
-                "time": "10:30",
+                "slot_date": "2024-01-20",
+                "slot_time": "10:30",
                 "location": "Stockholm",
                 "exam_type": "Körprov",
                 "vehicle_type": "Trafikverkets bil",
                 "availability_id": "slot_123456789"
             }
         }
+    }
 
 
 class BookingResult(BaseModel):
@@ -252,8 +263,8 @@ class BookingResult(BaseModel):
     payment_status: str = Field(..., description="Payment status")
     instructions: Optional[str] = Field(default=None, description="Special instructions")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "booking_id": "TV123456789",
                 "confirmation_number": "ABC123XYZ",
@@ -268,6 +279,7 @@ class BookingResult(BaseModel):
                 "instructions": "Kom 15 minuter innan provtiden"
             }
         }
+    }
 
 
 class WebhookPayload(BaseModel):
@@ -279,8 +291,8 @@ class WebhookPayload(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Event timestamp")
     data: Dict[str, Any] = Field(..., description="Event-specific data")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "event_type": "qr_code_update",
                 "job_id": "job_87654321-4321-4321-4321-210987654321",
@@ -292,6 +304,7 @@ class WebhookPayload(BaseModel):
                 }
             }
         }
+    }
 
 
 class SystemHealth(BaseModel):
@@ -316,8 +329,8 @@ class SystemHealth(BaseModel):
     browser_instances: int = Field(..., description="Number of active browser instances")
     browser_memory: float = Field(..., description="Total browser memory usage in MB")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "status": "healthy",
                 "timestamp": "2024-01-01T10:00:00Z",
@@ -333,6 +346,7 @@ class SystemHealth(BaseModel):
                 "browser_memory": 1024.5
             }
         }
+    }
 
 
 class ErrorResponse(BaseModel):
@@ -344,8 +358,8 @@ class ErrorResponse(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Error timestamp")
     request_id: Optional[str] = Field(default=None, description="Request identifier for tracking")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "error": "ValidationError",
                 "message": "Invalid license type specified",
@@ -358,6 +372,7 @@ class ErrorResponse(BaseModel):
                 "request_id": "req_123456789"
             }
         }
+    }
 
 
 class CancelJobRequest(BaseModel):
@@ -366,13 +381,14 @@ class CancelJobRequest(BaseModel):
     reason: Optional[str] = Field(default="User requested", description="Cancellation reason")
     force: bool = Field(default=False, description="Force cancellation even if job is running")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "reason": "User changed plans",
                 "force": False
             }
         }
+    }
 
 
 class JobMetrics(BaseModel):
@@ -393,8 +409,8 @@ class JobMetrics(BaseModel):
     errors_encountered: int = Field(default=0, description="Number of errors during job")
     retries_performed: int = Field(default=0, description="Number of retry attempts")
     
-    class Config:
-        schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "job_id": "job_87654321-4321-4321-4321-210987654321",
                 "total_duration": 245.7,
@@ -407,4 +423,5 @@ class JobMetrics(BaseModel):
                 "errors_encountered": 1,
                 "retries_performed": 2
             }
-        } 
+        }
+    } 

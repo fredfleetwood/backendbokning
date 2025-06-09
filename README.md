@@ -1,463 +1,496 @@
 # VPS Automation Server
 
-Production-ready automation server for Swedish driving test booking with real-time QR code streaming and multi-browser support.
+**Production-Ready Swedish Driving Test Booking Automation with Real-Time Webhooks**
+
+A comprehensive automation server for Swedish driving test booking with real-time browser automation, BankID integration, webhook notifications, and remote API control.
 
 ## 🚀 Features
 
-- **Multi-User Concurrency**: Handle 10+ simultaneous booking jobs
-- **Real-Time QR Streaming**: Capture and stream BankID QR codes to frontend
-- **Multi-Browser Support**: Chromium, Firefox, WebKit with automatic fallback
-- **Production Queue System**: Redis + Celery with job prioritization
-- **Comprehensive Monitoring**: Health checks, metrics, and structured logging
-- **Docker Deployment**: Production-ready containerization
-- **Webhook Integration**: Real-time communication with Supabase backend
+- **Remote API Control**: Start booking jobs from any device via REST API
+- **Real-Time Webhook System**: Live notifications to external services (Supabase, etc.)
+- **Browser Automation**: Visual browser automation with VNC support
+- **BankID QR Streaming**: Real-time QR code capture and delivery
+- **WebSocket Support**: Live status updates and QR code streaming
+- **Multi-Location Support**: Search across multiple test locations
+- **Production Ready**: Docker deployment with Redis state management
+- **Frontend Ready**: Designed for Lovable + Supabase integration
 
-## 🏗️ Architecture
+## 🏗️ Enhanced Architecture
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Frontend      │───▶│   FastAPI App    │───▶│   Celery Queue  │
-│   (Next.js)     │    │   (API Server)   │    │   (Background)  │
+│   Frontend      │───▶│   Supabase       │───▶│   VPS Server    │
+│   (Lovable)     │    │   Edge Function  │    │   (Port 8080)   │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                        │                        │
-         │                        ▼                        ▼
+         ▲                        ▲                        │
+         │                        │                        ▼
          │              ┌──────────────────┐    ┌─────────────────┐
-         │              │   Redis Cache    │    │  Playwright     │
-         │              │   (State/Queue)  │    │  (Browsers)     │
+         │              │   Webhook        │◀───│  Redis Storage  │
+         │              │   Notifications  │    │  (State/Cache)  │
          │              └──────────────────┘    └─────────────────┘
          │                        │                        │
-         ▼                        ▼                        ▼
+┌─────────────────┐               │                        ▼
+│   Real-time     │◀──────────────┘              ┌──────────────────┐
+│   Updates       │               │               └──────────────────┘
+│   (WebSocket)   │               │                        │
+└─────────────────┘               │                        │
+         ▲                        │                        │
+         │                        │                        ▼
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Supabase      │◀───│   Webhooks       │◀───│   QR Capture    │
-│   (Database)    │    │   (Notifications)│    │   (Streaming)   │
+│   VNC Viewer    │◀───│   Browser Auto   │───▶│  Trafikverket   │
+│   (Visual)      │    │   (Playwright)   │    │   (Website)     │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
+```
+
+## 📡 Communication Flows
+
+### **Flow 1: User Starts Booking**
+```
+User (Lovable) → Supabase Edge Function → VPS Server → Job Started
+```
+
+### **Flow 2: Real-Time Status Updates**
+```
+VPS Progress → Webhook to Supabase → Real-time to Frontend → User sees live updates
+```
+
+### **Flow 3: QR Code Streaming**
+```
+Browser QR Code → VPS Capture → Webhook + WebSocket → Frontend display
 ```
 
 ## 📋 Prerequisites
 
-- **OS**: Ubuntu 22.04 LTS (recommended)
-- **Memory**: 8GB RAM minimum, 16GB recommended
-- **CPU**: 4+ cores recommended for concurrent jobs
-- **Storage**: 50GB+ SSD for browser cache and logs
-- **Network**: Stable internet connection
-- **Domain**: For SSL/TLS certificate (production)
+- **VPS**: Ubuntu 22.04+ with 4GB+ RAM
+- **Ports**: 8080 (API), 5900 (VNC) open in firewall
+- **Dependencies**: Docker & Docker Compose OR Python 3.12+
 
-## 🛠️ Installation
+## 🛠️ Quick Start
 
-### Option 1: Docker Deployment (Recommended)
+### Option 1: Docker (Recommended)
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd vps-automation-server
-   ```
+```bash
+git clone <your-repo-url>
+cd vps-automation-server
 
-2. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   nano .env
-   ```
+# Start services
+docker-compose up -d
 
-3. **Deploy with Docker Compose**
-   ```bash
-   # Basic deployment
-   docker-compose up -d
-   
-   # Production with monitoring
-   docker-compose --profile monitoring up -d
-   
-   # Full production with nginx
-   docker-compose --profile production --profile monitoring up -d
-   ```
+# Check status
+curl http://localhost:8080/health
+```
 
-### Option 2: Manual Installation
+### Option 2: Manual Setup
 
-1. **System setup**
-   ```bash
-   chmod +x scripts/setup.sh
-   sudo ./scripts/setup.sh
-   ```
+```bash
+# Install dependencies
+sudo apt update
+sudo apt install python3.12 python3.12-venv redis-server xvfb x11vnc fluxbox
 
-2. **Install dependencies**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
+# Setup Python environment
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
-3. **Install browsers**
-   ```bash
-   playwright install-deps
-   playwright install chromium firefox webkit
-   ```
+# Install browsers
+playwright install-deps
+playwright install chromium
 
-4. **Configure services**
-   ```bash
-   # Copy environment config
-   cp .env.example .env
-   
-   # Start Redis
-   sudo systemctl start redis-server
-   
-   # Start application
-   uvicorn app.main:app --host 0.0.0.0 --port 8000
-   
-   # Start workers (separate terminal)
-   celery -A app.workers.celery_app worker --loglevel=info
-   ```
+# Start Redis
+sudo systemctl start redis-server
+
+# Start display services
+Xvfb :99 -screen 0 1920x1080x24 &
+DISPLAY=:99 fluxbox &
+x11vnc -display :99 -nopw -forever -shared &
+
+# Start server
+source venv/bin/activate
+export REDIS_URL="redis://localhost:6379/0"
+export API_SECRET_TOKEN="your-secret-token"
+export DISPLAY=":99"
+python -m uvicorn app.main_production:app --host 0.0.0.0 --port 8080
+```
 
 ## ⚙️ Configuration
 
 ### Environment Variables
 
-Key configuration options in `.env`:
+Create `.env` file:
 
 ```bash
-# Required Settings
-API_SECRET_TOKEN=your-secret-api-token
-SUPABASE_WEBHOOK_URL=https://your-project.supabase.co/rest/v1/webhook
-SUPABASE_SECRET_KEY=your-supabase-secret
-WEBHOOK_SECRET=your-webhook-secret
+# Required
+API_SECRET_TOKEN=your-secret-token-here
+REDIS_URL=redis://localhost:6379/0
 
-# Performance Tuning
-MAX_CONCURRENT_JOBS=10
-WORKER_CONCURRENCY=5
-BROWSER_HEADLESS=true
-MAX_BROWSER_INSTANCES=10
+# Webhook Configuration (Optional)
+WEBHOOK_SECRET=your-webhook-secret-key
+SUPABASE_WEBHOOK_URL=https://your-project.supabase.co/functions/v1/booking-webhook
 
-# Security
-RATE_LIMIT_REQUESTS=100
-RATE_LIMIT_WINDOW=60
+# Display & Browser
+DISPLAY=:99
+BROWSER_HEADLESS=false
+
+# Application Settings
+LOG_LEVEL=INFO
+DEBUG=false
+ENVIRONMENT=production
 ```
 
-### Browser Configuration
+### VNC Access (Visual Browser)
 
-The system supports multiple browsers with automatic fallback:
+Connect to see browser automation in real-time:
+- **Server**: `your-vps-ip:5900`
+- **Password**: None
+- **Client**: VNC Viewer, TightVNC, or built-in screen sharing
 
-1. **Chromium** (Primary) - Best performance and compatibility
-2. **Firefox** (Fallback) - Alternative for detection avoidance  
-3. **WebKit** (Last resort) - Safari engine compatibility
-
-## 📚 API Documentation
+## 📚 Enhanced API Usage
 
 ### Authentication
 
-All API endpoints require Bearer token authentication:
+All requests require Bearer token:
 
 ```bash
-curl -H "Authorization: Bearer your-api-token" \
-     https://your-domain.com/api/v1/booking/start
+export API_TOKEN="your-secret-token"
+export VPS_URL="http://your-vps-ip:8080"
 ```
 
-### Core Endpoints
+### Start Booking Job with Webhooks
 
-#### Start Booking Job
-```http
-POST /api/v1/booking/start
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "user_id": "user-123",
-  "license_type": "B",
-  "exam_type": "Körprov",
-  "locations": ["Stockholm", "Uppsala"],
-  "date_ranges": [
-    {"start": "2024-02-01", "end": "2024-02-15"}
-  ],
-  "webhook_url": "https://your-app.com/webhook",
-  "auto_book": true,
-  "priority": "normal"
-}
+```bash
+curl -X POST "$VPS_URL/api/v1/booking/start" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -d '{
+    "user_id": "your-user-id",
+    "license_type": "B", 
+    "exam_type": "Körprov",
+    "locations": ["Stockholm", "Uppsala"],
+    "webhook_url": "https://your-app.supabase.co/functions/v1/booking-webhook"
+  }'
 ```
 
-#### Check Job Status
-```http
-GET /api/v1/booking/status/{job_id}
-Authorization: Bearer <token>
-```
-
-#### Cancel Job
-```http
-POST /api/v1/booking/cancel/{job_id}
-Content-Type: application/json
-Authorization: Bearer <token>
-
-{
-  "reason": "User requested cancellation",
-  "force": false
-}
-```
-
-#### System Health
-```http
-GET /health/detailed
-```
-
-### Webhook Events
-
-The system sends real-time updates via webhooks:
-
-#### QR Code Update
+Response:
 ```json
 {
-  "event_type": "qr_code_update",
-  "job_id": "job_123",
+  "job_id": "job_abc123",
+  "status": "starting",
+  "message": "Booking automation started",
+  "webhook_configured": true,
+  "websocket_url": "/ws/job_abc123",
+  "qr_polling_url": "/api/v1/booking/job_abc123/qr"
+}
+```
+
+### Real-Time WebSocket Connection
+
+```javascript
+// Frontend WebSocket connection
+const ws = new WebSocket('ws://your-vps-ip:8080/ws/job_abc123');
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  if (data.type === 'qr_update') {
+    // Display QR code: data.image_data
+    showQRCode(data.image_data);
+  }
+};
+```
+
+### QR Code Polling (HTTP Fallback)
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "$VPS_URL/api/v1/booking/job_abc123/qr"
+```
+
+Response:
+```json
+{
+  "type": "qr_update",
+  "job_id": "job_abc123",
+  "image_data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "timestamp": "2024-01-01T10:07:30Z"
+}
+```
+
+### Webhook Notifications
+
+Your webhook endpoint will receive:
+
+**Booking Started:**
+```json
+{
+  "event_type": "booking_started",
+  "job_id": "job_abc123",
   "user_id": "user_123",
   "timestamp": "2024-01-01T10:00:00Z",
   "data": {
-    "qr_code_data": "data:image/png;base64,iVBORw0KGgo...",
-    "retry_count": 1
+    "config": {...},
+    "estimated_duration": "60-180 seconds"
   }
 }
 ```
 
-#### Status Update
+**Status Updates:**
 ```json
 {
   "event_type": "status_update",
-  "job_id": "job_123", 
+  "job_id": "job_abc123",
   "user_id": "user_123",
-  "timestamp": "2024-01-01T10:00:00Z",
   "data": {
-    "status": "authenticating",
+    "status": "qr_waiting",
     "message": "Waiting for BankID authentication",
-    "progress": 25.0
+    "progress": 25
   }
 }
 ```
 
-#### Booking Completion
+**QR Code Updates:**
+```json
+{
+  "event_type": "qr_code_update",
+  "job_id": "job_abc123",
+  "user_id": "user_123", 
+  "data": {
+    "qr_code_data": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+    "expires_in": 60
+  }
+}
+```
+
+**Booking Completed:**
 ```json
 {
   "event_type": "booking_completed",
-  "job_id": "job_123",
-  "user_id": "user_123", 
-  "timestamp": "2024-01-01T10:30:00Z",
+  "job_id": "job_abc123",
+  "user_id": "user_123",
   "data": {
     "success": true,
     "booking_result": {
       "booking_id": "TV123456789",
-      "confirmation_number": "ABC123XYZ",
       "exam_date": "2024-01-20",
-      "exam_time": "10:30",
-      "location": "Stockholm Bilprovning"
+      "exam_time": "10:30"
     }
   }
 }
 ```
 
-## 🔍 Monitoring
+## 🧪 Testing Communication Flows
 
-### Health Checks
-
-- **Basic**: `GET /health` - Simple health status
-- **Detailed**: `GET /health/detailed` - Comprehensive system metrics
-- **Webhook**: `GET /webhooks/health` - Webhook system status
-
-### Metrics (Prometheus)
-
-Available at `http://localhost:9091` when monitoring is enabled:
-
-- Job completion rates
-- Browser resource usage
-- Queue lengths and processing times
-- Error rates by type
-- System resource utilization
-
-### Logging
-
-Structured JSON logging with correlation IDs:
-
-```json
-{
-  "timestamp": "2024-01-01T10:00:00Z",
-  "level": "INFO",
-  "logger": "app.automation.playwright_driver",
-  "message": "Browser initialized successfully",
-  "user_id": "user_123",
-  "job_id": "job_123",
-  "browser_type": "chromium"
-}
-```
-
-### Flower Dashboard
-
-Celery task monitoring at `http://localhost:5555`:
-- Active/pending/failed tasks
-- Worker status and performance
-- Task routing and queues
-- Real-time task execution
-
-## 🚀 Deployment
-
-### Production Checklist
-
-- [ ] Configure SSL certificates
-- [ ] Set strong secrets in `.env`
-- [ ] Configure firewall rules
-- [ ] Set up log rotation
-- [ ] Configure backup procedures
-- [ ] Set resource limits
-- [ ] Configure monitoring alerts
-
-### Docker Production
+Run the comprehensive test suite:
 
 ```bash
-# Build and deploy
-docker-compose --profile production --profile monitoring up -d
-
-# Check status
-docker-compose ps
-
-# View logs
-docker-compose logs -f web worker
-
-# Scale workers
-docker-compose up -d --scale worker=3
+source venv/bin/activate
+export API_SECRET_TOKEN="your-token"
+python test_webhook_flows.py
 ```
 
-### Nginx Configuration
+This tests all three communication flows:
+- ✅ User starts booking 
+- ✅ Real-time status updates
+- ✅ QR code streaming
 
-Example nginx configuration for SSL termination:
+## 🔍 Enhanced Job Status Flow
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name your-domain.com;
-    
-    ssl_certificate /etc/ssl/certs/your-domain.crt;
-    ssl_certificate_key /etc/ssl/private/your-domain.key;
-    
-    location / {
-        proxy_pass http://localhost:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
+1. **`starting`** - Initializing browser, webhook sent
+2. **`navigating`** - Loading Trafikverket website
+3. **`login`** - Clicking "Boka prov" button
+4. **`bankid`** - Starting BankID authentication
+5. **`qr_waiting`** - Displaying QR code, streaming to webhook
+6. **`authenticated`** - BankID completed successfully
+7. **`configuring`** - Selecting license and exam type
+8. **`locations`** - Selecting test locations
+9. **`searching`** - Looking for available slots
+10. **`booking`** - Attempting to book found slot
+11. **`completed`** - Job finished, final webhook sent
+
+## 🖥️ Visual Monitoring
+
+### VNC Connection
+
+1. **Open VNC client** (VNC Viewer, etc.)
+2. **Connect to**: `your-vps-ip:5900` 
+3. **Watch browser automation** in real-time
+4. **See BankID QR codes** and booking process
+
+### Logs
+
+```bash
+# Docker logs
+docker-compose logs -f web
+
+# Manual logs  
+tail -f /var/log/automation.log
+```
+
+## 🚀 Frontend Integration
+
+### Supabase Edge Function
+
+Create a Supabase Edge Function to receive webhooks:
+
+```typescript
+// supabase/functions/booking-webhook/index.ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+
+serve(async (req) => {
+  const { event_type, job_id, user_id, data } = await req.json()
+  
+  // Update booking status in database
+  const { error } = await supabase
+    .from('bookings')
+    .update({ 
+      status: data.status,
+      progress: data.progress,
+      qr_code: data.qr_code_data 
+    })
+    .eq('job_id', job_id)
+  
+  // Broadcast real-time update to frontend
+  await supabase.realtime.send({
+    event: 'booking_update',
+    payload: { job_id, ...data }
+  })
+  
+  return new Response('OK')
+})
+```
+
+### Lovable Frontend Integration
+
+```javascript
+// Start booking from frontend
+const startBooking = async (bookingData) => {
+  const response = await fetch('/api/start-booking', {
+    method: 'POST',
+    body: JSON.stringify({
+      ...bookingData,
+      webhook_url: 'https://your-project.supabase.co/functions/v1/booking-webhook'
+    })
+  })
+  
+  const { job_id } = await response.json()
+  
+  // Subscribe to real-time updates
+  const channel = supabase
+    .channel('booking_updates')
+    .on('booking_update', (payload) => {
+      if (payload.job_id === job_id) {
+        updateBookingStatus(payload)
+        if (payload.qr_code_data) {
+          displayQRCode(payload.qr_code_data)
+        }
+      }
+    })
+    .subscribe()
 }
 ```
 
 ## 🛡️ Security
 
+### Webhook Security
+- **HMAC Signatures**: All webhooks include security signatures
+- **Secret Validation**: Configure `WEBHOOK_SECRET` for verification
+- **Header Authentication**: Custom headers for webhook identification
+
 ### API Security
-- Bearer token authentication
-- Rate limiting (100 req/min by default)
-- CORS protection
-- Input validation and sanitization
-
-### Infrastructure Security  
-- Container security (no-new-privileges)
-- Resource limits and isolation
-- Webhook signature verification
-- Secure defaults and hardening
-
-### Browser Security
-- Anti-detection measures
-- User agent rotation
-- Geolocation spoofing
-- Cookie and session isolation
+- **Bearer Token**: All endpoints require authentication
+- **Rate Limiting**: Built-in request throttling
+- **Input Validation**: All requests validated
 
 ## 🐛 Troubleshooting
 
+### Test Communication Flows
+
+```bash
+# Run full test suite
+python test_webhook_flows.py
+
+# Test specific endpoint
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "$VPS_URL/health/detailed"
+```
+
 ### Common Issues
 
-**Browser fails to start**
+**Webhook Not Receiving Updates**
 ```bash
-# Check browser dependencies
-playwright install-deps
+# Check webhook URL in job
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "$VPS_URL/api/v1/booking/status/job_id"
 
-# Verify shared memory
-df -h /dev/shm
-
-# Check container memory limits
-docker stats
+# Test webhook endpoint
+curl -X POST "your-webhook-url" \
+  -H "Content-Type: application/json" \
+  -d '{"test": "webhook"}'
 ```
 
-**Queue jobs stuck**
-```bash
-# Check Redis connection
-redis-cli ping
-
-# Restart workers
-docker-compose restart worker
-
-# Clear queue
-celery -A app.workers.celery_app purge
+**WebSocket Connection Failed**
+```javascript
+// Test WebSocket connection
+const ws = new WebSocket('ws://your-vps-ip:8080/ws/test_job');
+ws.onopen = () => console.log('✅ WebSocket connected');
+ws.onerror = (error) => console.log('❌ WebSocket error:', error);
 ```
 
-**High memory usage**
+**QR Code Not Appearing**
 ```bash
-# Check browser instances
-curl localhost:8000/api/v1/status/browser-sessions
-
-# Trigger cleanup
-curl -X POST localhost:8000/api/v1/status/maintenance/cleanup
+# Check QR polling endpoint
+curl -H "Authorization: Bearer $API_TOKEN" \
+  "$VPS_URL/api/v1/booking/job_id/qr"
 ```
 
-### Log Analysis
+## 📊 Performance
 
-```bash
-# Container logs
-docker-compose logs -f web worker
+### Resource Usage
+- **Base**: ~500MB RAM, 1 CPU core
+- **Per Job**: +200MB RAM per active booking
+- **Browser**: ~100MB RAM per browser instance
+- **WebSocket**: Minimal overhead per connection
 
-# Application logs (if using file logging)
-tail -f /app/logs/application.log | jq
+### Scaling
+- **Single Job**: 2GB RAM recommended
+- **Multiple Jobs**: Add 500MB per concurrent job
+- **VPS Size**: 4GB+ for production use
+- **Concurrent Webhooks**: Up to 100/second
 
-# System metrics
-docker stats --no-stream
-```
+## 📝 Complete API Reference
 
-## 📊 Performance Tuning
+### Core Endpoints
 
-### Resource Allocation
+| Method | Endpoint | Description | Webhook Support |
+|--------|----------|-------------|-----------------|
+| GET | `/health` | Health check | ❌ |
+| GET | `/health/detailed` | Detailed system status | ❌ |
+| POST | `/api/v1/booking/start` | Start booking job | ✅ |
+| GET | `/api/v1/booking/status/{job_id}` | Get job status | ❌ |
+| GET | `/api/v1/booking/{job_id}/qr` | Get latest QR code | ❌ |
+| POST | `/api/v1/booking/stop` | Stop job | ✅ |
+| GET | `/api/v1/booking/status` | List all jobs | ❌ |
+| WS | `/ws/{job_id}` | Real-time updates | ❌ |
 
-**Memory**: 512MB per browser instance + 256MB base
-**CPU**: 0.5 cores per concurrent job
-**Storage**: 100MB per job for cache/screenshots
+### Webhook Events
 
-### Scaling Guidelines
-
-- **10 concurrent users**: 2 worker containers, 8GB RAM
-- **25 concurrent users**: 4 worker containers, 16GB RAM  
-- **50 concurrent users**: 8 worker containers, 32GB RAM
-
-### Optimization
-
-```bash
-# Increase worker concurrency
-WORKER_CONCURRENCY=8
-
-# Optimize browser resource usage
-MAX_BROWSER_INSTANCES=15
-BROWSER_MEMORY_LIMIT=256MB
-
-# Tune Redis
-maxmemory 2gb
-maxmemory-policy allkeys-lru
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
+- `booking_started` - Job initialization
+- `status_update` - Progress updates
+- `qr_code_update` - New QR code available
+- `booking_completed` - Job finished (success/failure)
 
 ## 📄 License
 
-[Add license information]
+MIT License - see LICENSE file
 
 ## 🆘 Support
 
-For issues and questions:
-- Check the troubleshooting section
-- Review application logs
-- Monitor system metrics
-- Contact support team
+1. **Run test suite** - `python test_webhook_flows.py`
+2. **Check logs** for error messages
+3. **Verify configuration** (.env file)
+4. **Test webhooks** with webhook.site
+5. **Check VNC** for visual debugging
 
 ---
 
-**Built with**: FastAPI, Playwright, Celery, Redis, Docker 
+**Built with**: FastAPI, Playwright, Redis, Docker, WebSockets, Webhooks
+
+**Production-Ready. Real-Time. Frontend-Integrated.** 🚀 
