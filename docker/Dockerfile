@@ -43,6 +43,10 @@ RUN apt-get update && apt-get install -y \
     libxshmfence1 \
     # Virtual display for headless browser
     xvfb \
+    x11vnc \
+    # Additional Playwright dependencies
+    fonts-liberation \
+    fonts-noto-color-emoji \
     # Cleanup
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -73,9 +77,13 @@ COPY requirements.txt /app/
 # Install additional Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers as app user
+# Install Playwright system dependencies as root
+RUN python -m playwright install-deps
+
+# Switch to app user for browser installation
 USER app
-RUN python -m playwright install-deps || true
+
+# Install Playwright browsers as app user
 RUN python -m playwright install chromium firefox webkit
 
 # Switch back to root for final setup

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# VPS Automation Server - Production Deployment Script
-# This script deploys the complete production system with all services
+# VPS Automation Server - Simplified Production Deployment Script
+# This script deploys the simplified production system with only essential services
 
 set -e  # Exit on any error
 
-echo "🚀 Starting VPS Automation Server Production Deployment..."
+echo "🚀 Starting VPS Automation Server Simplified Deployment..."
 
 # Configuration
 DEPLOYMENT_ENV=${1:-production}
@@ -36,7 +36,7 @@ if [ ! -f ".env" ]; then
     echo "❌ .env file not found. Creating from template..."
     cp .env.example .env
     echo "⚠️  Please edit .env file with your production settings before proceeding."
-    echo "   Required settings: API_SECRET_TOKEN, SUPABASE_WEBHOOK_URL, etc."
+    echo "   Required settings: API_SECRET_TOKEN, etc."
     read -p "Press Enter after configuring .env file..."
 fi
 
@@ -59,9 +59,9 @@ docker-compose down --remove-orphans || true
 
 echo "✅ Existing services stopped"
 
-# Step 4: Deploy core services first
+# Step 4: Deploy core services
 echo ""
-echo "🚀 Starting core services (Redis, Web, Workers)..."
+echo "🚀 Starting core services (Redis, Web)..."
 
 # Start Redis first
 docker-compose up -d redis
@@ -77,33 +77,9 @@ docker-compose up -d web
 echo "⏳ Waiting for web service to be ready..."
 timeout 120 bash -c 'until curl -f http://localhost:8080/health; do sleep 5; done'
 
-# Start workers
-docker-compose up -d worker maintenance_worker scheduler
-
 echo "✅ Core services started"
 
-# Step 5: Start monitoring services
-echo ""
-echo "📊 Starting monitoring services..."
-
-# Enable monitoring profile and start
-docker-compose --profile monitoring up -d prometheus grafana
-
-# Start Flower for Celery monitoring
-docker-compose up -d flower
-
-echo "✅ Monitoring services started"
-
-# Step 6: Start load balancer
-echo ""
-echo "🔧 Starting load balancer (Nginx)..."
-
-# Enable production profile and start Nginx
-docker-compose --profile production up -d nginx
-
-echo "✅ Load balancer started"
-
-# Step 7: Deployment verification
+# Step 5: Deployment verification
 echo ""
 echo "🧪 Verifying deployment..."
 
@@ -122,21 +98,14 @@ else
     echo "❌ Health check: FAILED"
 fi
 
-# Test through Nginx (if running)
-if curl -f http://localhost/health > /dev/null 2>&1; then
-    echo "✅ Nginx proxy: PASSED"
-else
-    echo "⚠️  Nginx proxy: Not available (may be disabled)"
-fi
-
-# Test WebSocket endpoint availability
+# Test API documentation
 if curl -f http://localhost:8080/docs > /dev/null 2>&1; then
     echo "✅ API Documentation: PASSED"
 else
     echo "❌ API Documentation: FAILED"
 fi
 
-# Step 8: Display deployment summary
+# Step 6: Display deployment summary
 echo ""
 echo "🎉 Deployment Summary"
 echo "===================="
@@ -145,21 +114,14 @@ echo "🌐 Service Endpoints:"
 echo "   Main API:           http://$DOMAIN:8080"
 echo "   API Documentation:  http://$DOMAIN:8080/docs"
 echo "   Health Monitoring:  http://$DOMAIN:8080/health/detailed"
-echo "   Nginx Proxy:        http://$DOMAIN (if enabled)"
-echo ""
-echo "📊 Monitoring:"
-echo "   Flower (Celery):    http://$DOMAIN:5555"
-echo "   Prometheus:         http://$DOMAIN:9091 (if enabled)"
-echo "   Grafana:            http://$DOMAIN:3000 (if enabled)"
 echo ""
 echo "🔧 Management:"
 echo "   View logs:          docker-compose logs -f [service]"
-echo "   Scale workers:      docker-compose up -d --scale worker=N"
 echo "   Stop services:      docker-compose down"
 echo "   Update deployment:  ./deploy-production.sh"
 echo ""
 
-# Step 9: Start a test booking job
+# Step 7: Start a test booking job
 echo "🧪 Testing automation with sample booking..."
 
 # Test with authentication
@@ -189,15 +151,12 @@ echo "🎉 VPS Automation Server deployed successfully!"
 echo ""
 echo "📝 Next Steps:"
 echo "   1. Configure your domain DNS to point to this server"
-echo "   2. Set up SSL certificates for HTTPS"
-echo "   3. Configure firewall rules"
-echo "   4. Set up automated backups"
-echo "   5. Configure monitoring alerts"
+echo "   2. Configure firewall rules for ports 8080 and 5900 (VNC)"
+echo "   3. Set up automated backups"
 echo ""
 echo "🔐 Security Reminders:"
 echo "   - Change default passwords in .env file"
-echo "   - Enable HTTPS in production"
-echo "   - Restrict access to monitoring endpoints"
+echo "   - Restrict access to sensitive endpoints"
 echo "   - Regular security updates"
 echo ""
 echo "Happy automating! 🤖" 

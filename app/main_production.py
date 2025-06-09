@@ -14,7 +14,7 @@ import os
 from uuid import uuid4
 
 # Import our automation system
-from app.automation.simple_booking import start_automated_booking
+from app.automation.enhanced_booking import start_enhanced_booking as start_automated_booking
 
 # Simple app with full production features
 app = FastAPI(

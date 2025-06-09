@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     WEBHOOK_SECRET: str = Field(..., description="Secret for webhook verification")
     
     # Browser Configuration
-    BROWSER_HEADLESS: bool = Field(default=True, description="Run browsers in headless mode")
+    BROWSER_HEADLESS: bool = Field(default=False, description="Run browsers in headless mode")
     BROWSER_TIMEOUT: int = Field(default=30000, description="Browser operation timeout in ms")
     BROWSER_VIEWPORT_WIDTH: int = Field(default=1920, description="Browser viewport width")
     BROWSER_VIEWPORT_HEIGHT: int = Field(default=1080, description="Browser viewport height")
