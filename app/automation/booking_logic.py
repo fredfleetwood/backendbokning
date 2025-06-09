@@ -1,0 +1,3 @@
+"""
+Core Booking Algorithms
+""" 
