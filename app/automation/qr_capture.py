@@ -409,8 +409,8 @@ class QRCodeCapture:
                                 self.logger.info("BankID authentication may have completed")
                                 break
                     
-                    # Wait before next capture
-                    await asyncio.sleep(settings.QR_CAPTURE_INTERVAL)
+                    # Wait before next capture - USE BANKID INTERVAL FOR QR CODES!
+                    await asyncio.sleep(settings.BANKID_QR_REFRESH_INTERVAL)
                     
                 except Exception as e:
                     self.logger.error("Error during QR streaming iteration", error=str(e))
