@@ -7,11 +7,28 @@ import base64
 import json
 import time
 import os
+import random
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, Callable, List, Tuple
 from playwright.async_api import async_playwright, Page, Browser, Playwright
 import redis
 from app.utils.webhooks import webhook_manager
+
+
+# Enhanced exception classes (from playwright_driver.py)
+class BrowserError(Exception):
+    """Custom exception for browser-related errors"""
+    pass
+
+
+class AuthenticationError(Exception):
+    """Custom exception for authentication failures"""
+    pass
+
+
+class BookingError(Exception):
+    """Custom exception for booking failures"""
+    pass
 
 class EnhancedBookingAutomation:
     """
@@ -108,65 +125,95 @@ class EnhancedBookingAutomation:
             display = os.getenv("DISPLAY", ":0")
             print(f"[{self.job_id}] 🔒 Standard mode: headless={headless_mode}")
         
-        # Try WebKit first (with fixed args)
-        try:
-            print(f"[{self.job_id}] Launching with WebKit...")
-            webkit_args = []  # Try with minimal args first
-            if not headless_mode:
-                # Add display only if needed and supported
-                pass  # Don't add display arg for WebKit for now
-                
-            self.browser = await self.playwright.webkit.launch(
-                headless=headless_mode,
-                args=webkit_args  # Minimal args to avoid compatibility issues
-            )
-            print(f"[{self.job_id}] ✅ WebKit launch successful")
-        except Exception as e:
-            print(f"[{self.job_id}] WebKit launch failed: {e}")
-            
-            # Try Chromium as second choice (with visual mode)
-            try:
-                print(f"[{self.job_id}] Trying with Chromium...")
-                chromium_args = [
-                    '--disable-gpu',
-                    '--no-sandbox', 
-                    '--disable-dev-shm-usage',
-                ]
-                if not headless_mode:
-                    chromium_args.append(f'--display={display}')
-                
-                self.browser = await self.playwright.chromium.launch(
-                    headless=headless_mode,  # Use same headless setting as other browsers
-                    args=chromium_args
-                )
-                print(f"[{self.job_id}] ✅ Chromium launch successful")
-            except Exception as e2:
-                print(f"[{self.job_id}] Chromium launch failed: {e2}")
-                
-                # Fall back to Firefox as last resort
-                print(f"[{self.job_id}] Falling back to Firefox...")
-                firefox_args = [
-                    '--disable-gpu',
-                    '--no-sandbox', 
-                    '--disable-dev-shm-usage',
-                ]
-                if not headless_mode:
-                    firefox_args.append(f'--display={display}')
-                
-                self.browser = await self.playwright.firefox.launch(
-                    headless=headless_mode,
-                    args=firefox_args
-                )
-                print(f"[{self.job_id}] ✅ Firefox fallback successful")
+        # Enhanced browser launch with anti-detection measures (from playwright_driver.py)
+        browser_types = [
+            ('chromium', self.playwright.chromium),  # Start with Chromium for better stability  
+            ('firefox', self.playwright.firefox),
+            ('webkit', self.playwright.webkit)
+        ]
         
-        # Create context with Swedish settings
-        self.context = await self.browser.new_context(
-            permissions=["geolocation"],
-            geolocation={"latitude": 59.3293, "longitude": 18.0686},  # Stockholm coordinates
-            locale="sv-SE",
-            viewport={"width": 1920, "height": 1080},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-        )
+        # Enhanced launch arguments with anti-detection
+        base_args = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-background-networking',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding'
+        ]
+        
+        for browser_name, browser_launcher in browser_types:
+            try:
+                print(f"[{self.job_id}] 🚀 Launching {browser_name} with anti-detection...")
+                
+                # Browser-specific anti-detection args
+                launch_args = base_args.copy()
+                if browser_name == 'chromium':
+                    launch_args.extend([
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-extensions',
+                        '--no-first-run', 
+                        '--no-default-browser-check',
+                        '--disable-logging',
+                        '--disable-gpu-logging',
+                        '--disable-gpu'
+                    ])
+                
+                # Launch browser with enhanced options
+                browser_options = {
+                    'headless': headless_mode,
+                    'args': launch_args
+                }
+                
+                self.browser = await browser_launcher.launch(**browser_options)
+                print(f"[{self.job_id}] ✅ {browser_name.title()} launch successful with anti-detection")
+                break
+                
+            except Exception as e:
+                print(f"[{self.job_id}] ❌ {browser_name.title()} launch failed: {e}")
+                if browser_name == 'webkit':  # Last fallback
+                    raise BrowserError("All browser types failed to launch")
+                continue
+        
+        # Create context with enhanced anti-detection measures (from playwright_driver.py)
+        
+        # Enhanced user agent rotation for better anti-detection  
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', 
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        ]
+        
+                 context_options = {
+            'viewport': {'width': 1920, 'height': 1080},
+            'locale': 'sv-SE',
+            'timezone_id': 'Europe/Stockholm',
+            'permissions': ['geolocation'],
+            'geolocation': {'latitude': 59.3293, 'longitude': 18.0686},  # Stockholm coordinates
+            'user_agent': random.choice(user_agents)  # Randomized user agent
+        }
+        
+        self.context = await self.browser.new_context(**context_options)
+        
+        # Enhanced anti-detection: Remove webdriver property and other automation signals
+        await self.context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            
+            // Override plugins length to look more natural
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5],
+            });
+            
+            // Override languages to Swedish preference
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['sv-SE', 'sv', 'en'],
+            });
+        """)
         
         self.page = await self.context.new_page()
 
@@ -268,7 +315,7 @@ class EnhancedBookingAutomation:
             print(f"[{self.job_id}] ✅ Clicked 'Boka prov' button.")
             await asyncio.sleep(1)  # Pause after button press
         except Exception as e:
-            raise Exception(f"Error clicking 'Boka prov': {e}")
+            raise BookingError(f"Error clicking 'Boka prov': {e}")
 
     async def _handle_bankid_flow(self):
         """Handle BankID authentication with real QR streaming"""
@@ -283,7 +330,7 @@ class EnhancedBookingAutomation:
             await self._stream_bankid_qr()
             
         except Exception as e:
-            raise Exception(f"Error during BankID login: {e}")
+            raise AuthenticationError(f"Error during BankID login: {e}")
 
     async def _stream_bankid_qr(self):
         """
@@ -435,7 +482,7 @@ class EnhancedBookingAutomation:
                 print(f"[{self.job_id}] ❌ QR streaming error: {e}")
                 await asyncio.sleep(5)
         
-        raise Exception("BankID authentication timed out")
+        raise AuthenticationError("BankID authentication timed out")
 
     async def _wait_for_qr_element_to_appear(self) -> None:
         """Wait for QR code element to actually appear on the page before starting capture - CRITICAL FIX"""
@@ -500,7 +547,7 @@ class EnhancedBookingAutomation:
         
         # If we get here, QR code never appeared
         print(f"[{self.job_id}] ❌ QR code never appeared after {max_wait_time} seconds")
-        raise Exception(f"QR code did not appear within {max_wait_time} seconds")
+        raise AuthenticationError(f"QR code did not appear within {max_wait_time} seconds")
 
     async def _check_iframe_qr(self) -> Optional[str]:
         """Specialmetod för att fånga QR-kod från iframe (vanligt på Trafikverket)"""
