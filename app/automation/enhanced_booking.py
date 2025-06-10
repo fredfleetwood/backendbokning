@@ -90,8 +90,23 @@ class EnhancedBookingAutomation:
         await self._update_job_status("starting", "Launching browser with fallback strategy", 8)
         
         self.playwright = await async_playwright().start()
-        headless_mode = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
-        display = os.getenv("DISPLAY", ":0")
+        
+        # VNC Monitoring: Check for VNC monitoring settings
+        vnc_monitoring_enabled = os.getenv("VNC_MONITORING_ENABLED", "false").lower() == "true"
+        vnc_display = os.getenv("VNC_DISPLAY", ":99")
+        
+        if vnc_monitoring_enabled:
+            # Force non-headless mode for VNC visibility
+            headless_mode = False
+            display = vnc_display
+            # Set display environment variable for VNC
+            os.environ['DISPLAY'] = vnc_display
+            print(f"[{self.job_id}] 🖥️ VNC monitoring enabled: display={vnc_display}, headless={headless_mode}")
+        else:
+            # Use standard settings
+            headless_mode = os.getenv("BROWSER_HEADLESS", "true").lower() == "true"
+            display = os.getenv("DISPLAY", ":0")
+            print(f"[{self.job_id}] 🔒 Standard mode: headless={headless_mode}")
         
         # Try WebKit first (with fixed args)
         try:
@@ -348,9 +363,9 @@ class EnhancedBookingAutomation:
             "img[src*='bankid']"             # Image with 'bankid' in src
         ]
         
-        # Vänta på att Trafikverkets BankID komponent ska ladda helt
-        print(f"[{self.job_id}] 🔄 Waiting for Trafikverket BankID component to load...")
-        await asyncio.sleep(10)  # Längre initial väntan för Trafikverket
+        # CRITICAL FIX: Wait for QR element to actually appear before starting polling
+        print(f"[{self.job_id}] 🔄 Waiting for Trafikverket BankID QR component to actually appear...")
+        await self._wait_for_qr_element_to_appear()
         
         for attempt in range(300):  # 300 seconds total (1 sec intervals) - BankID timeout
             try:
@@ -421,6 +436,71 @@ class EnhancedBookingAutomation:
                 await asyncio.sleep(5)
         
         raise Exception("BankID authentication timed out")
+
+    async def _wait_for_qr_element_to_appear(self) -> None:
+        """Wait for QR code element to actually appear on the page before starting capture - CRITICAL FIX"""
+        
+        print(f"[{self.job_id}] 🔍 Waiting for QR code element to appear on page...")
+        await self._update_job_status("qr_waiting", "Waiting for QR code to load...", 25)
+        
+        # Enhanced QR selectors - prioritizing Trafikverket's actual structure
+        qr_selectors = [
+            # Priority #1: Trafikverket's actual QR structure 
+            ".qrcode canvas",                           # Exact match for <div class="qrcode"><canvas>
+            "canvas[height='256'][width='256']",        # Canvas with specific QR dimensions
+            
+            # Priority #2: Common QR patterns
+            "canvas[id*='qr' i]",                       # Canvas with 'qr' in ID (case insensitive)
+            "canvas[class*='qr' i]",                    # Canvas with 'qr' in class
+            "iframe[src*='bankid']",                    # BankID iframe containing QR
+            
+            # Priority #3: Fallback patterns
+            "img[alt*='QR' i]",                         # QR image alternative
+            "#qr-code, #qrcode, #qr_code",             # Common QR IDs
+            ".qr-code img, .qrcode img, .qr_code img", # QR in containers
+            "img[src*='qr' i]"                         # QR in image source
+        ]
+        
+        max_wait_time = 60  # Wait up to 60 seconds for QR to appear
+        check_interval = 2   # Check every 2 seconds
+        waited = 0
+        
+        while waited < max_wait_time:
+            try:
+                # Check each QR selector
+                for i, selector in enumerate(qr_selectors):
+                    try:
+                        element = await self.page.wait_for_selector(selector, timeout=1000)
+                        if element:
+                            # Double-check element is visible and has content
+                            is_visible = await element.is_visible()
+                            if is_visible:
+                                print(f"[{self.job_id}] ✅ QR code element found and visible! selector='{selector}', priority={i+1}, waited={waited}s")
+                                await self._update_job_status("qr_waiting", "QR code loaded - starting capture", 28)
+                                
+                                # Extra wait to ensure QR is fully rendered
+                                await asyncio.sleep(3)
+                                return
+                    except Exception:
+                        continue  # Try next selector
+                
+                # If no QR found yet, wait and try again
+                print(f"[{self.job_id}] 🔍 QR code not found yet, continuing to wait... ({waited}s)")
+                await asyncio.sleep(check_interval)
+                waited += check_interval
+                
+                # Update status with progress
+                if waited % 10 == 0:  # Every 10 seconds
+                    await self._update_job_status("qr_waiting", f"Still waiting for QR code... ({waited}s)", 25 + (waited * 2))
+            
+            except Exception as e:
+                print(f"[{self.job_id}] ⚠️ Error while waiting for QR code: {e}")
+                await asyncio.sleep(check_interval)
+                waited += check_interval
+        
+        # If we get here, QR code never appeared
+        print(f"[{self.job_id}] ❌ QR code never appeared after {max_wait_time} seconds")
+        raise Exception(f"QR code did not appear within {max_wait_time} seconds")
 
     async def _check_iframe_qr(self) -> Optional[str]:
         """Specialmetod för att fånga QR-kod från iframe (vanligt på Trafikverket)"""
