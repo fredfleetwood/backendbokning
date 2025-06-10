@@ -95,7 +95,7 @@ class WebhookManager:
             "qr_code_data": qr_code_data,
             "auth_ref": auth_ref,
             "timestamp": datetime.utcnow().isoformat(),
-            "expires_in": 60  # QR codes typically expire in 60 seconds
+            "expires_in": 180  # Extended QR timeout for better user experience (3 minutes)
         }
         
         return await self.send_webhook(

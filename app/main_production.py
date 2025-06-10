@@ -118,9 +118,9 @@ async def qr_streaming_callback(job_id: str, qr_image_data: str, qr_metadata: Di
     # Send to WebSocket client
     await manager.send_qr_update(job_id, qr_update)
     
-    # Store in Redis for HTTP polling fallback
+    # Store in Redis for HTTP polling fallback (extended timeout for better UX)
     if redis_client:
-        redis_client.setex(f"qr_latest:{job_id}", 60, json.dumps(qr_update))
+        redis_client.setex(f"qr_latest:{job_id}", 180, json.dumps(qr_update))  # 3 minutes timeout instead of 1
 
 @app.get("/")
 async def root():
@@ -313,8 +313,9 @@ async def get_latest_qr(job_id: str, token: str = Depends(verify_token)):
     
     return {
         "job_id": job_id,
-        "message": "No QR code available",
-        "timestamp": datetime.utcnow().isoformat()
+        "message": "No QR code available - waiting for BankID authentication or QR expired",
+        "timestamp": datetime.utcnow().isoformat(),
+        "qr_status": "expired_or_pending"
     }
 
 @app.post("/api/v1/booking/stop")  
