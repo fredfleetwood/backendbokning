@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     CLEANUP_INTERVAL: int = Field(default=300, description="Cleanup interval in seconds")
     
     # QR Code Configuration
-    QR_CAPTURE_INTERVAL: int = Field(default=25, description="QR code capture interval in seconds")
+    QR_CAPTURE_INTERVAL: int = Field(default=1, description="QR code capture interval in seconds - 1s for ultra-responsive BankID QR updates")
     QR_IMAGE_QUALITY: int = Field(default=95, description="QR code image quality (1-100)")
     QR_MAX_SIZE: int = Field(default=500, description="Maximum QR code image size in pixels")
     
@@ -77,7 +77,7 @@ class Settings(BaseSettings):
     
     # BankID Configuration
     BANKID_TIMEOUT: int = Field(default=300, description="BankID authentication timeout in seconds")
-    BANKID_QR_REFRESH_INTERVAL: int = Field(default=2, description="BankID QR refresh check interval")
+    BANKID_QR_REFRESH_INTERVAL: int = Field(default=1, description="BankID QR refresh check interval - 1s for ultra-responsive updates")
     
     # Geolocation (Stockholm coordinates)
     DEFAULT_LATITUDE: float = Field(default=59.3293, description="Default latitude for geolocation")

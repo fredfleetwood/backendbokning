@@ -271,7 +271,38 @@ class EnhancedBookingAutomation:
             raise Exception(f"Error during BankID login: {e}")
 
     async def _stream_bankid_qr(self):
-        """Stream BankID QR codes with real-time updates and capture from page"""
+        """
+        Stream BankID QR codes with real-time updates and capture from page
+        
+        CRITICAL: BankID QR Code Requirements (Updated for Secure Start compliance)
+        ========================================================================
+        
+        1. ANIMATED QR CODES: BankID uses animated QR codes that change every 2 seconds
+        2. REAL API INTEGRATION: QR codes MUST come from BankID collect API, not generated
+        3. REFRESH RATE: Ultra-responsive 1-second polling (faster than BankID's 2s requirement)
+        4. EXPIRATION: QR codes expire quickly - old codes are rejected by BankID app
+        5. SECURE START: Since May 2024, stricter QR code validation is enforced
+        
+        Current Implementation Status:
+        - ✅ Ultra-responsive 1-second polling interval
+        - ⚠️  MISSING: Real BankID API integration 
+        - ⚠️  FALLBACK: Currently using screen capture + fake QR generation
+        
+        Required Implementation:
+        -----------------------
+        1. Integrate with Swedish BankID RP API v6.0
+        2. Call /auth endpoint to get orderRef and autoStartToken
+        3. Poll /collect endpoint every 2 seconds for qrCode values
+        4. Display the qrCode value as animated QR (not screenshot)
+        5. Stop when collect returns 'complete' status
+        
+        Example proper flow:
+        POST /auth -> orderRef
+        GET /collect -> { qrCode: "bankid.xyz.123", status: "pending" }
+        GET /collect -> { qrCode: "bankid.xyz.124", status: "pending" } (1s later - ultra-responsive)
+        GET /collect -> { status: "complete", completionData: {...} }
+        
+        """
         
         await self._update_job_status("qr_waiting", "Waiting for BankID authentication", 25)
         
@@ -286,9 +317,9 @@ class EnhancedBookingAutomation:
             ".qr img"                 # Simple QR class
         ]
         
-        for attempt in range(30):  # 150 seconds total (5 sec intervals)
+        for attempt in range(300):  # 300 seconds total (1 sec intervals) - BankID timeout
             try:
-                # Try to capture real QR code from page
+                # Try to capture real QR code from page - PRIORITIZE REAL QR CODES
                 qr_captured = False
                 for selector in qr_selectors:
                     try:
@@ -306,25 +337,27 @@ class EnhancedBookingAutomation:
                     except Exception as e:
                         continue
                 
-                # Fallback: Generate simulated QR if real capture failed
-                if not qr_captured:
+                # IMPORTANT: Only generate fallback QR if absolutely no real QR found AND it's early in the process
+                if not qr_captured and attempt < 5:
+                    print(f"[{self.job_id}] ⚠️ No real QR found on attempt {attempt + 1}, generating temporary fallback")
                     qr_data = {
                         "timestamp": datetime.utcnow().isoformat(),
-                        "auth_ref": f"bankid_ref_{int(time.time())}_{attempt}",
-                        "qr_start_token": f"qr_token_{attempt}",
-                        "qr_start_secret": f"secret_{attempt}"
+                        "auth_ref": f"bankid_waiting_{attempt}",
+                        "message": "Waiting for BankID QR code to appear..."
                     }
                     
                     qr_image_data = self._generate_qr_image(json.dumps(qr_data))
                     await self._send_qr_update(qr_image_data, qr_data["auth_ref"])
-                    print(f"[{self.job_id}] 🔄 Generated fallback QR code (attempt {attempt + 1})")
+                elif not qr_captured:
+                    print(f"[{self.job_id}] 🔍 Still looking for real QR code (attempt {attempt + 1})")
                 
                 # Check if authentication completed
                 if await self._check_bankid_completion():
                     await self._update_job_status("authenticated", "BankID authentication successful", 30)
                     return True
                 
-                await asyncio.sleep(5)
+                # USE ULTRA-RESPONSIVE QR REFRESH INTERVAL (1 second)
+                await asyncio.sleep(1)
                 
             except Exception as e:
                 print(f"[{self.job_id}] ❌ QR streaming error: {e}")

@@ -396,7 +396,7 @@ class EnhancedPlaywrightDriver:
         await self._update_status(JobStatus.AUTHENTICATING, "Authenticating with BankID")
         
         max_wait_time = settings.BANKID_TIMEOUT
-        check_interval = settings.BANKID_QR_REFRESH_INTERVAL
+        check_interval = settings.QR_CAPTURE_INTERVAL  # Use consistent QR interval (1 second - ultra-responsive)
         waited = 0
         
         while waited < max_wait_time:
