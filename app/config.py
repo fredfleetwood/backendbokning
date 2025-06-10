@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     BROWSER_VIEWPORT_WIDTH: int = Field(default=1920, description="Browser viewport width")
     BROWSER_VIEWPORT_HEIGHT: int = Field(default=1080, description="Browser viewport height")
     
+    # VNC Monitoring Configuration
+    VNC_MONITORING_ENABLED: bool = Field(default=False, description="Enable VNC monitoring for live job debugging")
+    VNC_DISPLAY: str = Field(default=":99", description="VNC display to use for monitoring")
+    
     # Queue System Configuration
     MAX_CONCURRENT_JOBS: int = Field(default=10, description="Maximum concurrent booking jobs")
     MAX_QUEUE_SIZE: int = Field(default=50, description="Maximum queue size")

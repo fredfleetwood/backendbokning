@@ -315,7 +315,7 @@ class EnhancedBookingAutomation:
             print(f"[{self.job_id}] ✅ Clicked 'Boka prov' button.")
             await asyncio.sleep(1)  # Pause after button press
         except Exception as e:
-            raise BookingError(f"Error clicking 'Boka prov': {e}")
+            raise Exception(f"Error clicking 'Boka prov': {e}")
 
     async def _handle_bankid_flow(self):
         """Handle BankID authentication with real QR streaming"""
@@ -330,7 +330,7 @@ class EnhancedBookingAutomation:
             await self._stream_bankid_qr()
             
         except Exception as e:
-            raise AuthenticationError(f"Error during BankID login: {e}")
+            raise Exception(f"Error during BankID login: {e}")
 
     async def _stream_bankid_qr(self):
         """
