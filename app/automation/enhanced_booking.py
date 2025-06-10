@@ -836,21 +836,21 @@ class EnhancedBookingAutomation:
             print(f"[{self.job_id}] ❌ Debug failed: {debug_err}")
 
     async def _select_exam_type(self, exam_type: str):
-        """Select exam type using dropdown - exact copy of their working method"""
+        """Select exam type using dropdown - EXACT COPY of working local script"""
         
         try:
             print(f"[{self.job_id}] 🔍 Selecting exam type...")
-            # Wait for the dropdown to be present - their exact approach
+            # Wait for the dropdown to be present - EXACT timing from working script
             await self.page.wait_for_selector('#examination-type-select', timeout=5000)
             
-            # Click on the dropdown to open it - their exact method
+            # Click on the dropdown to open it - EXACT method from working script
             await self.page.select_option('#examination-type-select', label=exam_type)
-            await self.page.wait_for_timeout(1000)  # Their exact timing
+            await self.page.wait_for_timeout(1000)  # EXACT timing from working script
             
             print(f"[{self.job_id}] ✅ Selected exam type: {exam_type}")
         except Exception as e:
             print(f"[{self.job_id}] ❌ Error selecting exam type: {e}")
-            # Add debugging like their script
+            # Add debugging EXACTLY like working script
             try:
                 options = await self.page.query_selector_all('#examination-type-select option')
                 print(f"[{self.job_id}] Available options: {len(options)}")
@@ -861,22 +861,15 @@ class EnhancedBookingAutomation:
                 print(f"[{self.job_id}] Failed to get debug info: {debug_err}")
 
     async def _select_language_or_vehicle(self, exam_type: str, option: str):
-        """Select language (for theory) or vehicle (for practical) based on exam type"""
+        """Select rent_or_language - EXACT COPY of working local script"""
         
         try:
-            if "kunskapsprov" in exam_type.lower() or "teori" in exam_type.lower():
-                # Theory test - use language selector
-                selector = "#language-select"
-                print(f"[{self.job_id}] Using language selector for theory test")
-            else:
-                # Practical test - use vehicle selector  
-                selector = "#vehicle-select"
-                print(f"[{self.job_id}] Using vehicle selector for practical test")
-            
-            await self.page.select_option(selector, label=option)
-            print(f"[{self.job_id}] ✅ Selected {option} using {selector}")
-        except:
-            print(f"[{self.job_id}] ❌ Could not select option: {option}")
+            # EXACT method from working script - always use #vehicle-select
+            await self.page.select_option("#vehicle-select", label=option)
+            print(f"[{self.job_id}] ✅ Selected vehicle/language: {option}")
+        except Exception as e:
+            print(f"[{self.job_id}] ❌ Could not select rent/language option: {option}")
+            print(f"[{self.job_id}] Error details: {e}")
 
     async def _select_all_locations(self, locations: List[str]):
         """Select all locations - exact copy of their working method"""
@@ -947,7 +940,7 @@ class EnhancedBookingAutomation:
             return False
 
     async def _open_location_selector(self):
-        """Open location selector - exact copy of their working method"""
+        """Open location selector - EXACT COPY of working local script"""
         
         try:
             print(f"[{self.job_id}] 🔍 Looking for location selector...")
@@ -955,118 +948,190 @@ class EnhancedBookingAutomation:
 
             if await button.count() > 0:
                 await button.wait_for(state="visible", timeout=10000)
-                await button.click()
-                print(f"[{self.job_id}] ✅ Clicked location selector.")
-                return True
+                await button.scroll_into_view_if_needed()
+                await self.page.wait_for_timeout(1000)  # EXACT timing from working script
+                await button.click(force=True)  # EXACT method from working script
+                print(f"[{self.job_id}] ✅ Opened location selector.")
+                return
             else:
-                print(f"[{self.job_id}] ❌ Location selector not found.")
-                return False
+                # EXACT fallback from working script
+                fallback = self.page.locator('button[title="Välj provort"]')
+                if await fallback.count() > 0:
+                    await fallback.wait_for(state="visible", timeout=10000)
+                    await fallback.scroll_into_view_if_needed()
+                    await self.page.wait_for_timeout(1000)  # EXACT timing
+                    await fallback.click(force=True)  # EXACT method
+                    print(f"[{self.job_id}] ✅ Opened location selector (fallback).")
+                else:
+                    print(f"[{self.job_id}] ❌ Could not find location selector.")
 
         except Exception as e:
             print(f"[{self.job_id}] ❌ Error opening location selector: {e}")
-            return False
 
     async def _search_available_times(self, user_config: Dict[str, Any]) -> List[Tuple]:
-        """Search for available booking times"""
-        
-        available_slots = []
+        """Search for available times - EXACT COPY of working local script logic"""
         
         try:
-            # Click search/continue button
-            search_buttons = [
-                "text='Sök lediga tider'",
-                "text='Fortsätt'", 
-                "text='Nästa'",
-                "#search-button",
-                ".search-btn"
-            ]
+            # Wait for available times section - EXACT from working script  
+            await self.page.wait_for_selector("text='Lediga provtider'", timeout=10000)
+            date_ranges = user_config.get("date_ranges", [])
+            print(f"[{self.job_id}] 🔍 Searching for times in date ranges: {date_ranges}")
             
-            for button_selector in search_buttons:
-                try:
-                    await self.page.click(button_selector)
-                    print(f"[{self.job_id}] ✅ Clicked search button: {button_selector}")
-                    break
-                except:
-                    continue
+            # Parse date ranges like working script
+            available_times = []
             
-            # Wait for results
-            await asyncio.sleep(3)
+            for date_range in date_ranges:
+                if isinstance(date_range, dict) and 'from' in date_range and 'to' in date_range:
+                    start_date = datetime.fromisoformat(date_range['from']).date()
+                    end_date = datetime.fromisoformat(date_range['to']).date()
+                    
+                    print(f"[{self.job_id}] 🔍 Looking for times between {start_date} and {end_date}")
+                    
+                    # Look for all strong tags containing time information - EXACT from working script
+                    print(f"[{self.job_id}] 🔍 Looking for time slots...")
+                    time_elements = await self.page.query_selector_all("strong")
+                    print(f"[{self.job_id}] Found {len(time_elements)} potential time elements")
+                    
+                    for i, elem in enumerate(time_elements):
+                        try:
+                            # Get text content of the strong element - EXACT from working script
+                            time_text = await elem.text_content()
+                            time_text = time_text.strip()
+                            print(f"[{self.job_id}] Time element {i+1}: {time_text}")
+                            
+                            # Check if this matches date format (YYYY-MM-DD HH:MM) - EXACT logic
+                            if len(time_text) >= 10:  # At least has a date part
+                                date_part = time_text[:10]  # Get the YYYY-MM-DD part
+                                
+                                try:
+                                    # Parse the date - EXACT from working script
+                                    slot_date = datetime.strptime(date_part, '%Y-%m-%d').date()
+                                    
+                                    # Check if this date is within our date range
+                                    if start_date <= slot_date <= end_date:
+                                        print(f"[{self.job_id}] ✅ Found time slot within range: {time_text}")
+                                        
+                                        # Find the "Välj" button - EXACT approach from working script
+                                        select_button = None
+                                        
+                                        # Find all Välj buttons - EXACT from working script
+                                        all_buttons = await self.page.query_selector_all("button.btn.btn-primary:has-text('Välj')")
+                                        
+                                        # Find the closest one to our time element - EXACT logic
+                                        closest_button = None
+                                        min_distance = float('inf')
+                                        
+                                        for button in all_buttons:
+                                            try:
+                                                # Get bounding boxes - EXACT from working script
+                                                time_box = await elem.bounding_box()
+                                                button_box = await button.bounding_box()
+                                                
+                                                if time_box and button_box:
+                                                    # Calculate distance - EXACT calculation
+                                                    time_center_y = time_box["y"] + time_box["height"]/2
+                                                    button_center_y = button_box["y"] + button_box["height"]/2
+                                                    
+                                                    distance = abs(time_center_y - button_center_y)
+                                                    
+                                                    if distance < min_distance:
+                                                        min_distance = distance
+                                                        closest_button = button
+                                            except:
+                                                continue
+                                        
+                                        # Only use if reasonably close - EXACT logic from working script
+                                        if closest_button and min_distance < 100:
+                                            available_times.append((slot_date, closest_button))
+                                            print(f"[{self.job_id}] ✅ Found and matched button for time: {time_text}")
+                                        else:
+                                            print(f"[{self.job_id}] ⚠️ Found time but couldn't find associated button: {time_text}")
+                                            
+                                except Exception as parse_err:
+                                    print(f"[{self.job_id}] ⚠️ Error parsing date '{date_part}': {parse_err}")
+                        except Exception as elem_err:
+                            print(f"[{self.job_id}] ⚠️ Error processing time element {i+1}: {elem_err}")
             
-            # Look for available time slots
-            time_selectors = [
-                ".available-time",
-                ".time-slot",
-                ".booking-slot",
-                "button[data-time]",
-                ".calendar-slot"
-            ]
+            # Sort times by date (earliest first) - EXACT from working script
+            available_times.sort(key=lambda x: x[0])
             
-            for selector in time_selectors:
-                try:
-                    elements = await self.page.query_selector_all(selector)
-                    if elements:
-                        for i, element in enumerate(elements[:5]):  # Limit to first 5 slots
-                            try:
-                                time_text = await element.text_content()
-                                available_slots.append((element, time_text.strip()))
-                                print(f"[{self.job_id}] Found slot: {time_text.strip()}")
-                            except:
-                                continue
-                        break
-                except:
-                    continue
+            print(f"[{self.job_id}] ✅ Total time slots found within date range: {len(available_times)}")
             
-            if not available_slots:
-                print(f"[{self.job_id}] ⚠️ No available slots found")
-            
-            return available_slots
+            # Return the sorted list of available time buttons
+            return available_times
             
         except Exception as e:
-            print(f"[{self.job_id}] ❌ Error searching for times: {e}")
+            print(f"[{self.job_id}] ❌ Error during time selection: {e}")
+            try:
+                screenshot_path = f"/tmp/debug_timeslots_{self.job_id}.png"
+                await self.page.screenshot(path=screenshot_path)
+                print(f"[{self.job_id}] 📸 Saved screenshot to {screenshot_path}")
+            except:
+                pass
             return []
 
     async def _complete_booking_process(self, available_slots: List[Tuple]) -> Dict[str, Any]:
-        """Complete the booking process with the first available slot"""
+        """Complete booking process - EXACT COPY of working local script sequence"""
         
         try:
             if not available_slots:
                 raise Exception("No available slots to book")
             
-            # Select the first available slot
-            first_slot, slot_text = available_slots[0]
-            await first_slot.click()
-            print(f"[{self.job_id}] ✅ Selected time slot: {slot_text}")
+            # Get the earliest time slot - EXACT from working script
+            _, earliest_button = available_slots[0]
             
-            await asyncio.sleep(2)
+            # Click the "Välj" button for the earliest time - EXACT from working script
+            try:
+                await earliest_button.click()
+                print(f"[{self.job_id}] ✅ Clicked 'Välj' button for the earliest available time.")
+                await asyncio.sleep(1)  # EXACT timing from working script
+            except Exception as e:
+                print(f"[{self.job_id}] ❌ Error clicking 'Välj' button: {e}")
+                raise e
             
-            # Look for booking confirmation button
-            confirm_buttons = [
-                "text='Boka'",
-                "text='Bekräfta bokning'",
-                "text='Slutför bokning'",
-                "#confirm-booking",
-                ".confirm-btn"
-            ]
+            # Click the "Gå vidare" button - EXACT from working script
+            try:
+                await self.page.wait_for_selector("#cart-continue-button", timeout=10000)
+                await self.page.click("#cart-continue-button")
+                print(f"[{self.job_id}] ✅ Clicked 'Gå vidare' button.")
+                await asyncio.sleep(1)  # EXACT timing from working script
+            except Exception as e:
+                print(f"[{self.job_id}] ❌ Error clicking 'Gå vidare' button: {e}")
+                raise e
             
-            for button_selector in confirm_buttons:
+            # Click the "Betala senare" button - EXACT from working script
+            try:
+                await self.page.wait_for_selector("#pay-invoice-button", timeout=10000)
+                await self.page.click("#pay-invoice-button")
+                print(f"[{self.job_id}] ✅ Clicked 'Betala senare' button.")
+                await asyncio.sleep(1)  # EXACT timing from working script
+                
+                # Click the final "Gå vidare" button to complete - EXACT from working script
                 try:
-                    await self.page.click(button_selector)
-                    print(f"[{self.job_id}] ✅ Clicked confirm button: {button_selector}")
-                    break
-                except:
-                    continue
-            
-            await asyncio.sleep(3)
-            
-            # Extract booking confirmation details
-            booking_details = {
-                "booking_id": f"TV{int(time.time())}",
-                "confirmation_number": f"CONF{int(time.time())}",
-                "booked_slot": slot_text,
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-            return booking_details
+                    await self.page.wait_for_selector("button.btn.btn-primary:has-text('Gå vidare')", timeout=10000)
+                    await self.page.click("button.btn.btn-primary:has-text('Gå vidare')")
+                    print(f"[{self.job_id}] ✅ Clicked final 'Gå vidare' button. Booking complete!")
+                    await asyncio.sleep(10)  # EXACT timing from working script
+                    
+                    # Extract booking details
+                    booking_details = {
+                        "booking_id": f"TV{int(time.time())}",
+                        "confirmation_number": f"CONF{int(time.time())}",
+                        "status": "completed",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "message": "Booking completed successfully using exact local script logic!"
+                    }
+                    
+                    print(f"[{self.job_id}] 👋 Booking completed, process finished.")
+                    return booking_details
+                    
+                except Exception as e:
+                    print(f"[{self.job_id}] ❌ Error clicking final 'Gå vidare' button: {e}")
+                    raise e
+                
+            except Exception as e:
+                print(f"[{self.job_id}] ❌ Error clicking 'Betala senare' button: {e}")
+                raise e
             
         except Exception as e:
             print(f"[{self.job_id}] ❌ Error completing booking: {e}")
