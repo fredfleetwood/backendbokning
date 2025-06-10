@@ -187,7 +187,7 @@ class EnhancedBookingAutomation:
             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         ]
         
-                 context_options = {
+        context_options = {
             'viewport': {'width': 1920, 'height': 1080},
             'locale': 'sv-SE',
             'timezone_id': 'Europe/Stockholm',
@@ -324,9 +324,31 @@ class EnhancedBookingAutomation:
             await self.page.wait_for_selector("text='Fortsätt'", timeout=10000)
             await self.page.click("text='Fortsätt'")
             print(f"[{self.job_id}] ✅ Started BankID flow")
-            await asyncio.sleep(1)  # Pause after button press
             
-            # Start QR code streaming (like our original design)
+            # CRITICAL: Wait longer for BankID process to fully initialize
+            print(f"[{self.job_id}] ⏳ Waiting for BankID authentication process to start...")
+            await asyncio.sleep(5)  # Give BankID time to initialize
+            
+            # Check if page is loading BankID components
+            print(f"[{self.job_id}] 🔍 Checking if BankID components are loading...")
+            current_url = self.page.url
+            print(f"[{self.job_id}] 📍 Current URL after BankID start: {current_url}")
+            
+            # Wait for any loading indicators to disappear
+            try:
+                loading_selectors = [".spinner", ".loading", ".loader", "[class*='loading']"]
+                for loading_selector in loading_selectors:
+                    loading_element = await self.page.query_selector(loading_selector)
+                    if loading_element:
+                        print(f"[{self.job_id}] ⏳ Waiting for loading indicator to disappear: {loading_selector}")
+                        await self.page.wait_for_selector(loading_selector, state="hidden", timeout=10000)
+                        print(f"[{self.job_id}] ✅ Loading indicator disappeared")
+                        break
+            except Exception as loading_err:
+                print(f"[{self.job_id}] ℹ️ No loading indicators found or timeout: {loading_err}")
+            
+            # Start QR code streaming (after BankID is properly initialized)
+            print(f"[{self.job_id}] 🔄 BankID process should be ready - starting QR streaming...")
             await self._stream_bankid_qr()
             
         except Exception as e:
@@ -426,20 +448,20 @@ class EnhancedBookingAutomation:
                     # Try to capture real QR code from page - PRIORITIZE REAL QR CODES
                     qr_captured = False
                     for selector in qr_selectors:
-                    try:
-                        qr_element = await self.page.query_selector(selector)
-                        if qr_element:
-                            # Take screenshot of QR element
-                            qr_screenshot = await qr_element.screenshot()
-                            qr_data_url = f"data:image/png;base64,{base64.b64encode(qr_screenshot).decode()}"
-                            
-                            # Stream the real QR code
-                            await self._send_qr_update(qr_data_url, f"real_qr_{attempt}")
-                            qr_captured = True
-                            print(f"[{self.job_id}] ✅ Captured real QR code using selector: {selector}")
-                            break
-                    except Exception as e:
-                        continue
+                        try:
+                            qr_element = await self.page.query_selector(selector)
+                            if qr_element:
+                                # Take screenshot of QR element
+                                qr_screenshot = await qr_element.screenshot()
+                                qr_data_url = f"data:image/png;base64,{base64.b64encode(qr_screenshot).decode()}"
+                                
+                                # Stream the real QR code
+                                await self._send_qr_update(qr_data_url, f"real_qr_{attempt}")
+                                qr_captured = True
+                                print(f"[{self.job_id}] ✅ Captured real QR code using selector: {selector}")
+                                break
+                        except Exception as e:
+                            continue
                 
                 # DEBUG: After first few attempts, show what's actually on the page
                 if not qr_captured and attempt == 5:
@@ -508,16 +530,19 @@ class EnhancedBookingAutomation:
             "img[src*='qr' i]"                         # QR in image source
         ]
         
-        max_wait_time = 60  # Wait up to 60 seconds for QR to appear
-        check_interval = 2   # Check every 2 seconds
+        max_wait_time = 120  # Wait up to 2 minutes for QR to appear (längre tid)
+        check_interval = 3   # Check every 3 seconds (mindre ofta checks)
         waited = 0
+        
+        print(f"[{self.job_id}] 🔍 CRITICAL: Will wait up to {max_wait_time} seconds for QR code to appear...")
         
         while waited < max_wait_time:
             try:
-                # Check each QR selector
+                # Check each QR selector with LONGER timeout
                 for i, selector in enumerate(qr_selectors):
                     try:
-                        element = await self.page.wait_for_selector(selector, timeout=1000)
+                        print(f"[{self.job_id}] 🔍 Checking selector '{selector}' (priority {i+1})...")
+                        element = await self.page.wait_for_selector(selector, timeout=5000)  # 5 sekunder timeout per selector
                         if element:
                             # Double-check element is visible and has content
                             is_visible = await element.is_visible()
@@ -526,27 +551,39 @@ class EnhancedBookingAutomation:
                                 await self._update_job_status("qr_waiting", "QR code loaded - starting capture", 28)
                                 
                                 # Extra wait to ensure QR is fully rendered
-                                await asyncio.sleep(3)
+                                print(f"[{self.job_id}] ⏳ Waiting extra 5 seconds for QR to fully render...")
+                                await asyncio.sleep(5)
                                 return
-                    except Exception:
+                            else:
+                                print(f"[{self.job_id}] ⚠️ QR element found but not visible yet: {selector}")
+                    except Exception as e:
+                        print(f"[{self.job_id}] ⚠️ Selector '{selector}' failed: {e}")
                         continue  # Try next selector
                 
                 # If no QR found yet, wait and try again
-                print(f"[{self.job_id}] 🔍 QR code not found yet, continuing to wait... ({waited}s)")
+                print(f"[{self.job_id}] 🔍 QR code not found yet, continuing to wait... ({waited}s / {max_wait_time}s)")
                 await asyncio.sleep(check_interval)
                 waited += check_interval
                 
                 # Update status with progress
-                if waited % 10 == 0:  # Every 10 seconds
-                    await self._update_job_status("qr_waiting", f"Still waiting for QR code... ({waited}s)", 25 + (waited * 2))
+                if waited % 15 == 0:  # Every 15 seconds
+                    progress = min(25 + (waited * 2), 60)  # Cap progress at 60%
+                    await self._update_job_status("qr_waiting", f"Still waiting for QR code... ({waited}s)", progress)
+                    
+                    # Debug vad som finns på sidan
+                    if waited == 30:  # After 30 seconds, debug
+                        print(f"[{self.job_id}] 🔍 DEBUG: Taking screenshot and analyzing page at 30s mark...")
+                        await self._debug_page_elements()
             
             except Exception as e:
-                print(f"[{self.job_id}] ⚠️ Error while waiting for QR code: {e}")
+                print(f"[{self.job_id}] ❌ Error while waiting for QR code: {e}")
                 await asyncio.sleep(check_interval)
                 waited += check_interval
         
         # If we get here, QR code never appeared
         print(f"[{self.job_id}] ❌ QR code never appeared after {max_wait_time} seconds")
+        print(f"[{self.job_id}] 🔍 Taking final debug screenshot...")
+        await self._debug_page_elements()
         raise AuthenticationError(f"QR code did not appear within {max_wait_time} seconds")
 
     async def _check_iframe_qr(self) -> Optional[str]:

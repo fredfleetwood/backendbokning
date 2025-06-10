@@ -18,6 +18,50 @@ class WebhookManager:
         self.redis_client = redis_client
         self.timeout = 30.0
         self.max_retries = 3
+        # Supabase configuration for QR Storage
+        self.supabase_url = "https://kqemgnbqjrqepzkigfcx.supabase.co"
+        self.supabase_anon_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtxZW1nbmJxanJxZXB6a2lnZmN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDkyMTQ4MDEsImV4cCI6MjA2NDc5MDgwMX0.tnPomyWLMseJX0GlrUeO63Ig9GRZSTh1O1Fi2p9q8mc"
+        
+    async def send_qr_code_to_storage(self, job_id: str, user_id: str, 
+                                     qr_image_data: str, auth_ref: str = None) -> bool:
+        """
+        Send QR code to Supabase Storage for efficient handling
+        Returns True if successful, False if failed
+        """
+        try:
+            storage_url = f"{self.supabase_url}/functions/v1/qr-storage"
+            
+            payload = {
+                "job_id": job_id,
+                "qr_image_data": qr_image_data,
+                "auth_ref": auth_ref,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            print(f"[WEBHOOK] 📱 Sending QR to Supabase Storage for job {job_id}")
+            print(f"[WEBHOOK] 📊 QR data size: {len(qr_image_data)} characters")
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.supabase_anon_key}"
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(storage_url, json=payload, headers=headers)
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    qr_url = result.get('qr_url', 'URL not returned')
+                    print(f"[WEBHOOK] ✅ QR stored in Supabase Storage: {qr_url}")
+                    return True
+                else:
+                    error_text = response.text
+                    print(f"[WEBHOOK] ❌ QR storage failed: {response.status_code} - {error_text}")
+                    return False
+                    
+        except Exception as e:
+            print(f"[WEBHOOK] ❌ QR storage error: {e}")
+            return False
         
     async def send_webhook(self, webhook_url: str, event_type: str, job_id: str, 
                           user_id: str, data: Dict[str, Any]) -> bool:
@@ -89,13 +133,46 @@ class WebhookManager:
     
     async def send_qr_code_update(self, webhook_url: str, job_id: str, user_id: str,
                                  qr_code_data: str, auth_ref: str = None) -> bool:
-        """Send QR code update webhook"""
+        """
+        Enhanced QR code update using Supabase Storage for efficiency
+        Tries Storage first, falls back to webhook if needed
+        """
+        # First try to store in Supabase Storage
+        storage_success = await self.send_qr_code_to_storage(
+            job_id, user_id, qr_code_data, auth_ref
+        )
+        
+        if storage_success:
+            # Send lightweight webhook notification (no QR data included)
+            data = {
+                "qr_in_storage": True,
+                "auth_ref": auth_ref,
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": "QR code updated in storage",
+                "expires_in": 180  # 3 minutes
+            }
+            
+            print(f"[WEBHOOK] ✅ Sending lightweight QR notification (storage-based)")
+            return await self.send_webhook(
+                webhook_url, "qr_code_update", job_id, user_id, data
+            )
+        else:
+            # Fallback to original method with QR in webhook
+            print(f"[WEBHOOK] ⚠️ Storage failed, falling back to webhook QR")
+            return await self.send_qr_code_update_fallback(
+                webhook_url, job_id, user_id, qr_code_data, auth_ref
+            )
+    
+    async def send_qr_code_update_fallback(self, webhook_url: str, job_id: str, user_id: str,
+                                          qr_code_data: str, auth_ref: str = None) -> bool:
+        """Original QR code update method as fallback"""
         
         data = {
             "qr_code_data": qr_code_data,
             "auth_ref": auth_ref,
             "timestamp": datetime.utcnow().isoformat(),
-            "expires_in": 180  # Extended QR timeout for better user experience (3 minutes)
+            "expires_in": 180,  # Extended QR timeout for better user experience (3 minutes)
+            "qr_in_storage": False
         }
         
         return await self.send_webhook(
