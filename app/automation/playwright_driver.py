@@ -126,6 +126,12 @@ class EnhancedPlaywrightDriver:
         
         self.playwright = await async_playwright().start()
         
+        # VNC Monitoring: Set display environment variable if enabled
+        if settings.VNC_MONITORING_ENABLED:
+            import os
+            os.environ['DISPLAY'] = settings.VNC_DISPLAY
+            self.logger.info("VNC monitoring enabled", display=settings.VNC_DISPLAY)
+        
         # Browser launch arguments
         launch_args = [
             '--no-sandbox',
@@ -152,8 +158,14 @@ class EnhancedPlaywrightDriver:
             ])
         
         # Launch browser
+        # Override headless setting for VNC monitoring
+        headless_mode = self.config.get('headless', settings.BROWSER_HEADLESS)
+        if settings.VNC_MONITORING_ENABLED:
+            headless_mode = False  # Force non-headless for VNC visibility
+            self.logger.info("VNC monitoring: forcing non-headless mode for live visibility")
+        
         browser_options = {
-            'headless': self.config.get('headless', settings.BROWSER_HEADLESS),
+            'headless': headless_mode,
             'args': launch_args
         }
         
@@ -338,10 +350,10 @@ class EnhancedPlaywrightDriver:
             # Click "Fortsätt" to start BankID
             await self._click_continue_button()
             
-            # Wait for QR code to appear
-            await asyncio.sleep(5)
+            # CRITICAL FIX: Wait for QR code element to actually appear before starting polling
+            await self._wait_for_qr_code_to_appear()
             
-            # Initialize QR capture
+            # Initialize QR capture ONLY after QR code is confirmed to exist
             self.qr_capture = QRCodeCapture(
                 user_id=self.user_id,
                 job_id=self.job_id,
@@ -389,6 +401,74 @@ class EnhancedPlaywrightDriver:
                 continue
         
         raise AuthenticationError("Could not find 'Fortsätt' button")
+
+    async def _wait_for_qr_code_to_appear(self) -> None:
+        """Wait for QR code element to actually appear on the page before starting capture"""
+        
+        self.logger.info("Waiting for QR code element to appear on page...")
+        await self._update_status(JobStatus.QR_WAITING, "Waiting for QR code to load...")
+        
+        # Enhanced QR selectors - prioritizing Trafikverket's actual structure
+        qr_selectors = [
+            # Priority #1: Trafikverket's actual QR structure 
+            ".qrcode canvas",                           # Exact match for <div class="qrcode"><canvas>
+            "canvas[height='256'][width='256']",        # Canvas with specific QR dimensions
+            
+            # Priority #2: Common QR patterns
+            "canvas[id*='qr' i]",                       # Canvas with 'qr' in ID (case insensitive)
+            "canvas[class*='qr' i]",                    # Canvas with 'qr' in class
+            "iframe[src*='bankid']",                    # BankID iframe containing QR
+            
+            # Priority #3: Fallback patterns
+            "img[alt*='QR' i]",                         # QR image alternative
+            "#qr-code, #qrcode, #qr_code",             # Common QR IDs
+            ".qr-code img, .qrcode img, .qr_code img", # QR in containers
+            "img[src*='qr' i]"                         # QR in image source
+        ]
+        
+        max_wait_time = 60  # Wait up to 60 seconds for QR to appear
+        check_interval = 2   # Check every 2 seconds
+        waited = 0
+        
+        while waited < max_wait_time:
+            try:
+                # Check each QR selector
+                for i, selector in enumerate(qr_selectors):
+                    try:
+                        element = await self.page.wait_for_selector(selector, timeout=1000)
+                        if element:
+                            # Double-check element is visible and has content
+                            is_visible = await element.is_visible()
+                            if is_visible:
+                                self.logger.info("QR code element found and visible!", 
+                                                selector=selector, 
+                                                priority=i+1,
+                                                waited_seconds=waited)
+                                await self._update_status(JobStatus.QR_WAITING, "QR code loaded - starting capture")
+                                
+                                # Extra wait to ensure QR is fully rendered
+                                await asyncio.sleep(3)
+                                return
+                    except Exception:
+                        continue  # Try next selector
+                
+                # If no QR found yet, wait and try again
+                self.logger.info("QR code not found yet, continuing to wait...", waited_seconds=waited)
+                await asyncio.sleep(check_interval)
+                waited += check_interval
+                
+                # Update status with progress
+                if waited % 10 == 0:  # Every 10 seconds
+                    await self._update_status(JobStatus.QR_WAITING, f"Still waiting for QR code... ({waited}s)")
+            
+            except Exception as e:
+                self.logger.warning("Error while waiting for QR code", error=str(e))
+                await asyncio.sleep(check_interval)
+                waited += check_interval
+        
+        # If we get here, QR code never appeared
+        self.logger.error("QR code never appeared after maximum wait time", max_wait_seconds=max_wait_time)
+        raise AuthenticationError(f"QR code did not appear within {max_wait_time} seconds")
 
     async def _wait_for_authentication_completion(self) -> None:
         """Wait for BankID authentication to complete"""
