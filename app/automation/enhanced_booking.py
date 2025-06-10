@@ -271,19 +271,34 @@ class EnhancedBookingAutomation:
         except Exception as debug_err:
             print(f"[{self.job_id}] ❌ Debug check failed: {debug_err}")
         
-        # Now do the exact sequence from their working script
+        # Now do the exact sequence from their working script with CONSERVATIVE timing
+        print(f"[{self.job_id}] 🔧 Starting exam type selection...")
         await self._select_exam_type(user_config["exam_type"])
-        await asyncio.sleep(2)  # Exact timing from their script
+        print(f"[{self.job_id}] ⏳ Waiting for page to update after exam type selection...")
+        await asyncio.sleep(3)  # MORE conservative timing
+        
+        # CRITICAL: Verify dropdown is ready before continuing
+        await self._wait_for_page_stability()
         
         # Handle vehicle/language options - exactly like their script
+        print(f"[{self.job_id}] 🔧 Starting vehicle/language selection...")
         for rent_or_language in user_config.get("rent_or_language", ["Egen bil"]):
             await self._select_language_or_vehicle(user_config["exam_type"], rent_or_language)
-            await asyncio.sleep(2)  # Exact timing from their script
+            print(f"[{self.job_id}] ⏳ Waiting for option to be processed...")
+            await asyncio.sleep(3)  # MORE conservative timing
+        
+        # CRITICAL: Verify form is ready before locations
+        await self._wait_for_page_stability()
         
         # Select locations - exactly like their script
         await self._update_job_status("locations", "Selecting locations", 45)
+        print(f"[{self.job_id}] 🔧 Starting location selection...")
         await self._select_all_locations(user_config["locations"])
-        await asyncio.sleep(2)  # Exact timing from their script
+        print(f"[{self.job_id}] ⏳ Waiting for location selection to stabilize...")
+        await asyncio.sleep(3)  # MORE conservative timing
+        
+        # CRITICAL: Verify all form elements are ready
+        await self._wait_for_page_stability()
         
         # Search for available times
         await self._update_job_status("searching", "Searching for available times", 60)
@@ -835,41 +850,140 @@ class EnhancedBookingAutomation:
         except Exception as debug_err:
             print(f"[{self.job_id}] ❌ Debug failed: {debug_err}")
 
-    async def _select_exam_type(self, exam_type: str):
-        """Select exam type using dropdown - EXACT COPY of working local script"""
+    async def _wait_for_page_stability(self):
+        """Wait for page to be stable - no loading indicators, elements ready"""
         
         try:
-            print(f"[{self.job_id}] 🔍 Selecting exam type...")
-            # Wait for the dropdown to be present - EXACT timing from working script
-            await self.page.wait_for_selector('#examination-type-select', timeout=5000)
+            print(f"[{self.job_id}] ⏳ Checking page stability...")
             
-            # Click on the dropdown to open it - EXACT method from working script
+            # Wait for any loading indicators to disappear
+            loading_selectors = [
+                ".spinner", ".loading", ".loader", 
+                "[class*='loading']", "[class*='spinner']",
+                ".busy", ".wait", ".processing"
+            ]
+            
+            for selector in loading_selectors:
+                try:
+                    # If loading element exists, wait for it to disappear
+                    loading_elem = await self.page.query_selector(selector)
+                    if loading_elem:
+                        print(f"[{self.job_id}] ⏳ Waiting for loading indicator to disappear: {selector}")
+                        await self.page.wait_for_selector(selector, state="hidden", timeout=10000)
+                except:
+                    continue
+            
+            # Wait for network to be idle (no requests for 500ms)
+            try:
+                await self.page.wait_for_load_state("networkidle", timeout=5000)
+                print(f"[{self.job_id}] ✅ Network is idle")
+            except:
+                print(f"[{self.job_id}] ⚠️ Network idle timeout - continuing anyway")
+            
+            # Extra stability wait
+            await asyncio.sleep(1)
+            print(f"[{self.job_id}] ✅ Page appears stable")
+            
+        except Exception as e:
+            print(f"[{self.job_id}] ⚠️ Page stability check failed: {e}")
+
+    async def _select_exam_type(self, exam_type: str):
+        """Select exam type using dropdown - ENHANCED with stability checks"""
+        
+        try:
+            print(f"[{self.job_id}] 🔍 Selecting exam type: {exam_type}")
+            
+            # Wait for the dropdown to be present AND visible
+            print(f"[{self.job_id}] ⏳ Waiting for exam type dropdown...")
+            dropdown = self.page.locator('#examination-type-select')
+            await dropdown.wait_for(state="visible", timeout=10000)
+            
+            # Ensure dropdown is ready by checking if it has options
+            await self.page.wait_for_function("""
+                () => {
+                    const select = document.getElementById('examination-type-select');
+                    return select && select.options && select.options.length > 1;
+                }
+            """, timeout=5000)
+            
+            # Scroll into view and focus
+            await dropdown.scroll_into_view_if_needed()
+            await asyncio.sleep(0.5)  # Brief pause after scrolling
+            
+            # Select the option
             await self.page.select_option('#examination-type-select', label=exam_type)
-            await self.page.wait_for_timeout(1000)  # EXACT timing from working script
-            
             print(f"[{self.job_id}] ✅ Selected exam type: {exam_type}")
+            
+            # Wait for selection to be processed
+            await asyncio.sleep(1.5)  # Longer than original to let page update
+            
         except Exception as e:
             print(f"[{self.job_id}] ❌ Error selecting exam type: {e}")
-            # Add debugging EXACTLY like working script
+            # Enhanced debugging
             try:
-                options = await self.page.query_selector_all('#examination-type-select option')
-                print(f"[{self.job_id}] Available options: {len(options)}")
-                for i, opt in enumerate(options):
-                    opt_text = await opt.text_content()
-                    print(f"[{self.job_id}] Option {i+1}: {opt_text}")
+                dropdown_exists = await self.page.query_selector('#examination-type-select')
+                print(f"[{self.job_id}] Dropdown exists: {dropdown_exists is not None}")
+                
+                if dropdown_exists:
+                    options = await self.page.query_selector_all('#examination-type-select option')
+                    print(f"[{self.job_id}] Available options: {len(options)}")
+                    for i, opt in enumerate(options):
+                        opt_text = await opt.text_content()
+                        opt_value = await opt.get_attribute('value')
+                        print(f"[{self.job_id}] Option {i+1}: '{opt_text}' (value: '{opt_value}')")
             except Exception as debug_err:
                 print(f"[{self.job_id}] Failed to get debug info: {debug_err}")
+            raise e
 
     async def _select_language_or_vehicle(self, exam_type: str, option: str):
-        """Select rent_or_language - EXACT COPY of working local script"""
+        """Select rent_or_language - ENHANCED with stability checks"""
         
         try:
-            # EXACT method from working script - always use #vehicle-select
+            print(f"[{self.job_id}] 🔍 Selecting vehicle/language option: {option}")
+            
+            # Wait for the vehicle dropdown to be ready
+            print(f"[{self.job_id}] ⏳ Waiting for vehicle dropdown...")
+            vehicle_dropdown = self.page.locator("#vehicle-select")
+            await vehicle_dropdown.wait_for(state="visible", timeout=10000)
+            
+            # Ensure dropdown has options loaded
+            await self.page.wait_for_function("""
+                () => {
+                    const select = document.getElementById('vehicle-select');
+                    return select && select.options && select.options.length > 1;
+                }
+            """, timeout=5000)
+            
+            # Scroll into view and ensure it's ready
+            await vehicle_dropdown.scroll_into_view_if_needed()
+            await asyncio.sleep(0.5)
+            
+            # Select the option
             await self.page.select_option("#vehicle-select", label=option)
             print(f"[{self.job_id}] ✅ Selected vehicle/language: {option}")
+            
+            # Wait for selection to be processed
+            await asyncio.sleep(1)
+            
         except Exception as e:
             print(f"[{self.job_id}] ❌ Could not select rent/language option: {option}")
             print(f"[{self.job_id}] Error details: {e}")
+            
+            # Enhanced debugging
+            try:
+                dropdown_exists = await self.page.query_selector("#vehicle-select")
+                print(f"[{self.job_id}] Vehicle dropdown exists: {dropdown_exists is not None}")
+                
+                if dropdown_exists:
+                    options = await self.page.query_selector_all('#vehicle-select option')
+                    print(f"[{self.job_id}] Available vehicle options: {len(options)}")
+                    for i, opt in enumerate(options):
+                        opt_text = await opt.text_content()
+                        opt_value = await opt.get_attribute('value')
+                        print(f"[{self.job_id}] Vehicle option {i+1}: '{opt_text}' (value: '{opt_value}')")
+            except Exception as debug_err:
+                print(f"[{self.job_id}] Failed to get vehicle debug info: {debug_err}")
+            raise e
 
     async def _select_all_locations(self, locations: List[str]):
         """Select all locations - exact copy of their working method"""
@@ -893,12 +1007,19 @@ class EnhancedBookingAutomation:
             else:
                 print(f"[{self.job_id}] ℹ️ No 'Ta bort' buttons found; no previous selections to remove.")
 
-            # Add each location in the config - their exact method
+            # Add each location with ENHANCED stability and timing
             for location in locations:
-                # Type and select the location
+                print(f"[{self.job_id}] 🔍 Processing location: {location}")
+                
+                # Wait for input field to be ready
                 input_field = self.page.locator("#location-search-input")
-                await input_field.wait_for(state="visible", timeout=8000)
+                await input_field.wait_for(state="visible", timeout=10000)
+                
+                # Ensure input field is interactive
+                await input_field.scroll_into_view_if_needed()
+                await asyncio.sleep(0.5)
 
+                # Clear and type location with enhanced method
                 await self.page.evaluate("""
                     (location) => {
                         const input = document.getElementById('location-search-input');
@@ -906,33 +1027,60 @@ class EnhancedBookingAutomation:
                             input.focus();
                             input.value = '';
                             input.dispatchEvent(new Event('input', { bubbles: true }));
-                            input.value = location;
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            setTimeout(() => {
+                                input.value = location;
+                                input.dispatchEvent(new Event('input', { bubbles: true }));
+                                input.dispatchEvent(new Event('change', { bubbles: true }));
+                            }, 100);
                         }
                     }
                 """, location)
 
-                await self.page.wait_for_timeout(1500)  # Their exact timing
+                # Wait longer for search results to appear
+                print(f"[{self.job_id}] ⏳ Waiting for search results for: {location}")
+                await asyncio.sleep(2)  # More conservative timing
 
+                # Wait for items to appear and be ready
                 items = self.page.locator(".select-item.mb-2")
-                await items.wait_for(state="visible", timeout=8000)
-                count = await items.count()
+                try:
+                    await items.first.wait_for(state="visible", timeout=10000)
+                    count = await items.count()
+                    print(f"[{self.job_id}] 📍 Found {count} search results for: {location}")
+                except:
+                    print(f"[{self.job_id}] ⚠️ No search results appeared for: {location}")
+                    count = 0
 
                 if count == 0:
                     print(f"[{self.job_id}] ⚠️ No selectable items found for location: {location}")
                     continue
 
+                # Click all matching items with better error handling
                 for i in range(count):
                     try:
-                        await items.nth(i).click()
+                        item = items.nth(i)
+                        await item.scroll_into_view_if_needed()
+                        await asyncio.sleep(0.3)  # Brief pause before click
+                        await item.click()
                         print(f"[{self.job_id}] ✅ Selected location item {i+1} for: {location}")
-                        await self.page.wait_for_timeout(500)  # Their exact timing
+                        await asyncio.sleep(0.8)  # More conservative timing
                     except Exception as click_err:
                         print(f"[{self.job_id}] ❌ Failed to click item {i+1} for {location}: {click_err}")
+                        continue
 
-            # Confirm all selections
-            await self.page.locator("text=Bekräfta").click()
+            # Confirm all selections with stability
+            print(f"[{self.job_id}] ⏳ Confirming location selections...")
+            confirm_button = self.page.locator("text=Bekräfta")
+            await confirm_button.wait_for(state="visible", timeout=5000)
+            await confirm_button.scroll_into_view_if_needed()
+            await asyncio.sleep(0.5)
+            
+            await confirm_button.click()
             print(f"[{self.job_id}] ✅ Confirmed all location selections.")
+            
+            # Wait for modal to close and form to update
+            await asyncio.sleep(2)
+            await self._wait_for_page_stability()
+            
             return True
 
         except Exception as e:
@@ -940,33 +1088,50 @@ class EnhancedBookingAutomation:
             return False
 
     async def _open_location_selector(self):
-        """Open location selector - EXACT COPY of working local script"""
+        """Open location selector - ENHANCED with stability and timing"""
         
         try:
             print(f"[{self.job_id}] 🔍 Looking for location selector...")
+            
+            # Wait for page to be stable first
+            await self._wait_for_page_stability()
+            
+            # Try primary selector
             button = self.page.locator('#select-location-search')
 
             if await button.count() > 0:
+                print(f"[{self.job_id}] ⏳ Found primary location button, preparing to click...")
                 await button.wait_for(state="visible", timeout=10000)
                 await button.scroll_into_view_if_needed()
-                await self.page.wait_for_timeout(1000)  # EXACT timing from working script
-                await button.click(force=True)  # EXACT method from working script
+                
+                # Extra wait to ensure button is interactive
+                await asyncio.sleep(1.5)  # More conservative timing
+                
+                await button.click(force=True)
                 print(f"[{self.job_id}] ✅ Opened location selector.")
+                
+                # Wait for modal/dropdown to appear
+                await asyncio.sleep(2)
                 return
             else:
-                # EXACT fallback from working script
+                # Try fallback selector
+                print(f"[{self.job_id}] ⏳ Primary button not found, trying fallback...")
                 fallback = self.page.locator('button[title="Välj provort"]')
                 if await fallback.count() > 0:
                     await fallback.wait_for(state="visible", timeout=10000)
                     await fallback.scroll_into_view_if_needed()
-                    await self.page.wait_for_timeout(1000)  # EXACT timing
-                    await fallback.click(force=True)  # EXACT method
+                    await asyncio.sleep(1.5)  # More conservative timing
+                    await fallback.click(force=True)
                     print(f"[{self.job_id}] ✅ Opened location selector (fallback).")
+                    await asyncio.sleep(2)
+                    return
                 else:
-                    print(f"[{self.job_id}] ❌ Could not find location selector.")
+                    print(f"[{self.job_id}] ❌ Could not find location selector button.")
+                    raise Exception("No location selector button found")
 
         except Exception as e:
             print(f"[{self.job_id}] ❌ Error opening location selector: {e}")
+            raise e
 
     async def _search_available_times(self, user_config: Dict[str, Any]) -> List[Tuple]:
         """Search for available times - EXACT COPY of working local script logic"""
