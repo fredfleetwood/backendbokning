@@ -306,22 +306,64 @@ class EnhancedBookingAutomation:
         
         await self._update_job_status("qr_waiting", "Waiting for BankID authentication", 25)
         
-        # Try to find the actual QR code element first
+        # TRAFIKVERKET-SPECIFIC QR SELECTORS (baserat på riktig HTML struktur!)
         qr_selectors = [
-            "#qr-code img",           # Standard QR code image
-            ".qr-code img",           # Alternative class
-            "[alt*='QR']",            # Image with QR in alt text
-            "canvas#qr-canvas",       # Canvas-based QR code
-            ".bankid-qr img",         # BankID specific
-            "img[src*='qr']",         # Image with 'qr' in src
-            ".qr img"                 # Simple QR class
+            # EXAKT TRAFIKVERKET STRUKTUR (från HTML du visade)
+            ".qrcode canvas",                # EXAKT: <div class="qrcode"><canvas>
+            "div.qrcode canvas",             # Backup version av samma
+            ".qrcode canvas[width='256']",   # Med exakt storlek
+            ".qrcode canvas[height='256']",  # Med exakt storlek
+            
+            # Trafikverket variationer
+            "#qrcode canvas",                # Om de använder ID istället
+            "[class*='qrcode'] canvas",      # Partiell klass match
+            "[class*='qr-code'] canvas",     # Alternativ stavning
+            ".qr-code canvas",               # Alternativ stavning
+            ".qr_code canvas",               # Underscore version
+            
+            # Canvas specifika selektorer (prioritet efter exakta)
+            "canvas[width='256'][height='256']",  # Exakt storlek
+            "canvas[width='256']",           # Bara width match
+            "canvas[height='256']",          # Bara height match
+            "canvas[style*='256px']",        # Style-baserad match
+            
+            # BankID context canvas
+            ".bankid canvas",                # BankID kontext
+            ".bankid-container canvas",      # BankID container
+            ".auth canvas",                  # Auth kontext
+            ".authentication canvas",       # Authentication kontext
+            ".login canvas",                 # Login kontext
+            
+            # Iframe selektorer (för säkerhets skull)
+            "iframe[src*='bankid']",         # BankID iframe
+            "iframe[src*='login']",          # Login iframe
+            "iframe[src*='auth']",           # Auth iframe
+            
+            # Fallback img selektorer (om de ändrar implementering)
+            ".qrcode img",                   # QR code img fallback
+            ".qr-code img",                  # Alternative class
+            "[alt*='QR']",                   # Image with QR in alt text
+            "[alt*='BankID']",               # Image with BankID in alt
+            "img[src*='qr']",                # Image with 'qr' in src
+            "img[src*='bankid']"             # Image with 'bankid' in src
         ]
+        
+        # Vänta på att Trafikverkets BankID komponent ska ladda helt
+        print(f"[{self.job_id}] 🔄 Waiting for Trafikverket BankID component to load...")
+        await asyncio.sleep(10)  # Längre initial väntan för Trafikverket
         
         for attempt in range(300):  # 300 seconds total (1 sec intervals) - BankID timeout
             try:
-                # Try to capture real QR code from page - PRIORITIZE REAL QR CODES
-                qr_captured = False
-                for selector in qr_selectors:
+                # SPECIAL: Check for iframe first (Trafikverket använder ofta iframe för BankID)
+                iframe_qr = await self._check_iframe_qr()
+                if iframe_qr:
+                    await self._send_qr_update(iframe_qr, f"iframe_qr_{attempt}")
+                    print(f"[{self.job_id}] ✅ Captured QR from iframe!")
+                    qr_captured = True
+                else:
+                    # Try to capture real QR code from page - PRIORITIZE REAL QR CODES
+                    qr_captured = False
+                    for selector in qr_selectors:
                     try:
                         qr_element = await self.page.query_selector(selector)
                         if qr_element:
@@ -337,6 +379,12 @@ class EnhancedBookingAutomation:
                     except Exception as e:
                         continue
                 
+                # DEBUG: After first few attempts, show what's actually on the page
+                if not qr_captured and attempt == 5:
+                    await self._debug_page_elements()
+                elif not qr_captured and attempt == 15:
+                    await self._debug_page_elements()  # Debug again after more time
+                
                 # IMPORTANT: Only generate fallback QR if absolutely no real QR found AND it's early in the process
                 if not qr_captured and attempt < 5:
                     print(f"[{self.job_id}] ⚠️ No real QR found on attempt {attempt + 1}, generating temporary fallback")
@@ -348,6 +396,15 @@ class EnhancedBookingAutomation:
                     
                     qr_image_data = self._generate_qr_image(json.dumps(qr_data))
                     await self._send_qr_update(qr_image_data, qr_data["auth_ref"])
+                elif not qr_captured and attempt > 60:  # After 60 seconds, try to refresh QR
+                    print(f"[{self.job_id}] 🔄 QR timeout approaching, trying to refresh QR capture (attempt {attempt + 1})")
+                    # Try to click/refresh the page to get new QR
+                    try:
+                        await self.page.reload()
+                        await asyncio.sleep(2)
+                        print(f"[{self.job_id}] 🔄 Page refreshed to get new QR code")
+                    except Exception as e:
+                        print(f"[{self.job_id}] ⚠️ Failed to refresh page: {e}")
                 elif not qr_captured:
                     print(f"[{self.job_id}] 🔍 Still looking for real QR code (attempt {attempt + 1})")
                 
@@ -364,6 +421,104 @@ class EnhancedBookingAutomation:
                 await asyncio.sleep(5)
         
         raise Exception("BankID authentication timed out")
+
+    async def _check_iframe_qr(self) -> Optional[str]:
+        """Specialmetod för att fånga QR-kod från iframe (vanligt på Trafikverket)"""
+        
+        try:
+            # Leta efter BankID iframe
+            iframe_selectors = [
+                "iframe[src*='bankid']",
+                "iframe[src*='login']", 
+                "iframe[src*='auth']",
+                "iframe[name*='bankid']",
+                "iframe[id*='bankid']",
+                "iframe[class*='bankid']"
+            ]
+            
+            for iframe_selector in iframe_selectors:
+                try:
+                    iframe = await self.page.query_selector(iframe_selector)
+                    if iframe:
+                        print(f"[{self.job_id}] 🔍 Found BankID iframe with selector: {iframe_selector}")
+                        
+                        # Få fram iframe innehåll
+                        iframe_content = await iframe.content_frame()
+                        if iframe_content:
+                            # Leta efter QR-kod i iframe
+                            qr_in_iframe = await iframe_content.query_selector("img, canvas")
+                            if qr_in_iframe:
+                                # Ta skärmdump av QR i iframe
+                                qr_screenshot = await qr_in_iframe.screenshot()
+                                qr_data_url = f"data:image/png;base64,{base64.b64encode(qr_screenshot).decode()}"
+                                return qr_data_url
+                                
+                except Exception as e:
+                    print(f"[{self.job_id}] ⚠️ Iframe check failed for {iframe_selector}: {e}")
+                    continue
+            
+            return None
+            
+        except Exception as e:
+            print(f"[{self.job_id}] ❌ Iframe QR check failed: {e}")
+            return None
+
+    async def _debug_page_elements(self):
+        """Debug: Visa vad som faktiskt finns på Trafikverkets sida"""
+        
+        try:
+            print(f"[{self.job_id}] 🔍 DEBUG: Analyzing Trafikverket page elements...")
+            
+            # Current URL
+            current_url = self.page.url
+            print(f"[{self.job_id}] 📍 Current URL: {current_url}")
+            
+            # Look for divs with class containing 'qr'
+            qr_divs = await self.page.query_selector_all("[class*='qr']")
+            print(f"[{self.job_id}] 🔍 Found {len(qr_divs)} divs with 'qr' in class")
+            
+            for i, div in enumerate(qr_divs[:5]):  # Limit to first 5
+                try:
+                    class_name = await div.get_attribute('class')
+                    inner_html = await div.inner_html()
+                    print(f"[{self.job_id}]   Div {i+1}: class='{class_name}', content='{inner_html[:100]}...'")
+                except:
+                    pass
+            
+            # Look for canvas elements
+            canvases = await self.page.query_selector_all("canvas")
+            print(f"[{self.job_id}] 🎨 Found {len(canvases)} canvas elements")
+            
+            for i, canvas in enumerate(canvases[:3]):  # Limit to first 3
+                try:
+                    width = await canvas.get_attribute('width')
+                    height = await canvas.get_attribute('height')
+                    class_name = await canvas.get_attribute('class')
+                    print(f"[{self.job_id}]   Canvas {i+1}: {width}x{height}, class='{class_name}'")
+                except:
+                    pass
+            
+            # Look for iframes
+            iframes = await self.page.query_selector_all("iframe")
+            print(f"[{self.job_id}] 🖼️ Found {len(iframes)} iframe elements")
+            
+            for i, iframe in enumerate(iframes[:3]):
+                try:
+                    src = await iframe.get_attribute('src')
+                    print(f"[{self.job_id}]   Iframe {i+1}: src='{src}'")
+                except:
+                    pass
+            
+            # Take a debug screenshot
+            try:
+                screenshot_path = f"/tmp/trafikverket_debug_{self.job_id}_{int(time.time())}.png"
+                await self.page.screenshot(path=screenshot_path, full_page=True)
+                print(f"[{self.job_id}] 📸 Debug screenshot saved: {screenshot_path}")
+            except Exception as e:
+                print(f"[{self.job_id}] ❌ Screenshot failed: {e}")
+                
+        except Exception as e:
+            print(f"[{self.job_id}] ❌ Debug failed: {e}")
 
     async def _send_qr_update(self, qr_image_data: str, auth_ref: str):
         """Send QR code update via callback and webhook"""
