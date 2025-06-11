@@ -15,7 +15,9 @@ from uuid import uuid4
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+import pathlib
+backend_dir = pathlib.Path(__file__).parent.parent.resolve()
+load_dotenv(backend_dir / ".env")
 
 # Import our automation system
 from app.automation.enhanced_booking import start_enhanced_booking as start_automated_booking
@@ -495,4 +497,4 @@ async def websocket_endpoint(websocket: WebSocket, job_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    uvicorn.run(app, host="0.0.0.0", port=8080) 
