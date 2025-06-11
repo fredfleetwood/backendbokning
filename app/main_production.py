@@ -12,6 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import redis
 import os
 from uuid import uuid4
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Import our automation system
 from app.automation.enhanced_booking import start_enhanced_booking as start_automated_booking
