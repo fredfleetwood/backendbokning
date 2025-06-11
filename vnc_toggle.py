@@ -73,7 +73,7 @@ def show_status():
     print(f"{status_emoji} VNC Monitoring: {'ENABLED' if vnc_enabled else 'DISABLED'}")
     if vnc_enabled:
         print(f"📺 VNC Display: {vnc_display}")
-        print(f"🌐 Web VNC URL: http://87.106.247.92:8081/vnc.html")
+        print(f"🌐 Web VNC URL: http://87.106.247.92:8082/vnc.html")
         print(f"🔑 VNC Password: vnc123")
     print("=" * 40)
 
@@ -91,7 +91,7 @@ def main():
             if update_env_file(True):
                 print("✅ VNC monitoring ENABLED!")
                 print("📺 All new frontend jobs will be visible on VNC")
-                print("🌐 Connect to: http://87.106.247.92:8081/vnc.html")
+                print("🌐 Connect to: http://87.106.247.92:8082/vnc.html")
                 print("🔑 Password: vnc123")
                 print("\n⚠️  NOTE: Restart the server for changes to take effect!")
             else:
@@ -128,7 +128,7 @@ def main():
             if update_env_file(True):
                 print("\n✅ VNC monitoring ENABLED!")
                 print("📺 All new frontend jobs will be visible on VNC")
-                print("🌐 Connect to: http://87.106.247.92:8081/vnc.html")
+                print("🌐 Connect to: http://87.106.247.92:8082/vnc.html")
                 print("🔑 Password: vnc123")
                 print("\n⚠️  NOTE: Restart the server for changes to take effect!")
         
