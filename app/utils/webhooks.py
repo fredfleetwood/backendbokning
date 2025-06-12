@@ -91,6 +91,12 @@ class WebhookManager:
             "X-Job-ID": job_id
         }
         
+        # Add Authorization header for Supabase Edge Functions
+        if "supabase.co" in webhook_url and "/functions/v1/" in webhook_url:
+            headers["Authorization"] = f"Bearer {self.supabase_anon_key}"
+            headers["apikey"] = self.supabase_anon_key
+            print(f"[WEBHOOK] 🔑 Added Supabase authorization for Edge Function")
+        
         # Try to send with retries
         for attempt in range(self.max_retries):
             try:

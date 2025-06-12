@@ -239,8 +239,14 @@ async def start_booking(request: Dict[str, Any], token: str = Depends(verify_tok
     if len(active_jobs) >= 10:  # Max 10 concurrent jobs
         raise HTTPException(status_code=503, detail="Server at capacity. Please try again later.")
     
-    # Generate job ID
-    job_id = f"job_{uuid4().hex[:16]}"
+    # Use job_id from request if provided, otherwise generate new one
+    job_id = request.get("job_id")
+    if not job_id:
+        # Generate job ID only if not provided
+        job_id = f"job_{uuid4().hex[:16]}"
+        print(f"🆔 Generated new job_id: {job_id}")
+    else:
+        print(f"🆔 Using provided job_id: {job_id}")
     
     # Extract webhook URL if provided
     webhook_url = request.get("webhook_url")
